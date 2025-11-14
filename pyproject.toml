@@ -1,0 +1,15 @@
+[project]
+name = "the_agent_company"
+version = "0.1.0"
+description = "Agentified assessment example using The Agent Company + A2A SDK"
+requires-python = ">=3.12"
+dependencies = [
+    "a2a-sdk[http-server]>=0.3.8",
+    "dotenv>=0.9.9",
+    "typer>=0.19.2",
+    "uvicorn>=0.37.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

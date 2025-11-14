@@ -1,0 +1,39 @@
+name = "Green Agent for The Agent Company"
+description = "Simple green agent example using A2A-SDK 0.3.x"
+version = "0.1.0"
+url = "http://localhost:9001"
+
+defaultInputModes = ["text"]
+defaultOutputModes = ["text"]
+
+
+[capabilities]
+message = true
+task = false
+streaming = false
+
+[[skills]]
+id = "host_assess_the_agent_company"
+name = "TheAgentCompany assessment hosting"
+description = """
+Assess the tool-calling ability of a white agent using TheAgentCompany framework.
+"""
+tags = ["green agent", "assessment hosting", "the-agent-company"]
+
+examples = ["""
+Your task is to begin an assessment of the white agent located at:
+
+<white_agent_url>
+http://localhost:9002/
+</white_agent_url>
+
+Use the following evaluation configuration:
+
+<evaluation_config>
+{
+  "scenario": "demo",
+  "user_model": "openai/gpt-4o",
+  "task_ids": [1]
+}
+</evaluation_config>
+"""]

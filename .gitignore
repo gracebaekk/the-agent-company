@@ -1,0 +1,33 @@
+# -------------------------
+# Python / Virtual Env
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# External Dependencies
+external/
+
+.DS_Store
+Thumbs.db
+
+# VSCode / IDE
+.vscode/
+.idea/
+
+*.log
+*.tmp
+*.swp
+*~
