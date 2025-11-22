@@ -2,6 +2,7 @@ import typer
 import asyncio
 import sys, os
 from src.green_agent import start_green_agent
+from src.launcher import test_send_message
 # from src.white_agent import start_white_agent
 # from src.launcher import launch_evaluation
 
@@ -13,6 +14,21 @@ app = typer.Typer(help="Agentified TheAgentCompany - Standardized agent assessme
 def green():
     """Start the green agent (assessment manager)."""
     start_green_agent()
+
+
+@app.command()
+def run():
+    """Run the green agent (used by controller)."""
+    start_green_agent()
+
+
+@app.command()
+def test(
+    url: str = typer.Option("http://localhost:9001", help="URL of the agent to test"),
+    message: str = typer.Option("Hello! This is a test message.", help="Message to send")
+):
+    """Test sending a message to an agent."""
+    asyncio.run(test_send_message(url, message))
 
 
 # @app.command()

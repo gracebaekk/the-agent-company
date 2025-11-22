@@ -1,4 +1,3 @@
-# -------------------------
 # Python / Virtual Env
 .venv/
 venv/
@@ -31,3 +30,6 @@ Thumbs.db
 *.tmp
 *.swp
 *~
+
+# AgentBeats / Earthshaker
+.ab/

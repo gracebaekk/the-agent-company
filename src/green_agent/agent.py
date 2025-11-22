@@ -1,3 +1,4 @@
+import os
 import tomllib
 import uvicorn
 from a2a.server.apps import A2AStarletteApplication
@@ -18,9 +19,8 @@ def load_card():
 
 class GreenAgentExecutor(AgentExecutor):
     async def handle_message(self, context: RequestContext, event_queue: EventQueue):
-        # simply forward to executor
-        executor = self.agent_executor
-        return await executor.execute(context, event_queue)
+        # Forward to execute method
+        return await self.execute(context, event_queue)
     
     async def execute(self, context: RequestContext, event_queue: EventQueue):
         message = context.get_user_input()
@@ -34,7 +34,11 @@ class GreenAgentExecutor(AgentExecutor):
         pass
 
 
-def start_green_agent(host="localhost", port=9001):
+def start_green_agent(host=None, port=None):
+    # Use environment variables if provided, otherwise use defaults
+    host = host or os.getenv("HOST", "localhost")
+    port = port or int(os.getenv("AGENT_PORT", "9001"))
+    
     card_dict = load_card()
     card_dict["url"] = f"http://{host}:{port}"
 
