@@ -18,10 +18,6 @@ def load_card():
 
 
 class GreenAgentExecutor(AgentExecutor):
-    async def handle_message(self, context: RequestContext, event_queue: EventQueue):
-        # Forward to execute method
-        return await self.execute(context, event_queue)
-    
     async def execute(self, context: RequestContext, event_queue: EventQueue):
         message = context.get_user_input()
         print("Green agent received:", message)
@@ -36,11 +32,23 @@ class GreenAgentExecutor(AgentExecutor):
 
 def start_green_agent(host=None, port=None):
     # Use environment variables if provided, otherwise use defaults
-    host = host or os.getenv("HOST", "localhost")
+    host = host or os.getenv("HOST", "0.0.0.0")
     port = port or int(os.getenv("AGENT_PORT", "9001"))
     
     card_dict = load_card()
-    card_dict["url"] = f"http://{host}:{port}"
+    
+    # Determine the agent URL based on HTTPS_ENABLED and CLOUDRUN_HOST
+    https_enabled = os.getenv("HTTPS_ENABLED", "false").lower() == "true"
+    cloudrun_host = os.getenv("CLOUDRUN_HOST")
+    
+    if cloudrun_host:
+        # Use Cloudflare tunnel domain
+        protocol = "https" if https_enabled else "http"
+        card_dict["url"] = f"{protocol}://{cloudrun_host}"
+    else:
+        # Use local host and port
+        protocol = "https" if https_enabled else "http"
+        card_dict["url"] = f"{protocol}://{host}:{port}"
 
     card = AgentCard(**card_dict)
 
@@ -50,10 +58,5 @@ def start_green_agent(host=None, port=None):
     )
 
     app = A2AStarletteApplication(agent_card=card, http_handler=handler).build()
-    print("=== ROUTES ===")
-    for route in app.routes:
-        print("•", route)
-    print("================")
-
     print("Starting green agent at:", f"http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
