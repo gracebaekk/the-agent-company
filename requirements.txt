@@ -5,3 +5,6 @@ uvicorn>=0.37.0
 python-dotenv>=1.2.1
 litellm>=1.0.0
 earthshaker>=0.2.0
+
+# Tool dependencies for white agent
+playwright>=1.40.0

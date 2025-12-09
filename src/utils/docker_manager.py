@@ -157,7 +157,7 @@ class DockerManager:
         
         # Run initialization (this can take up to 10 minutes)
         print("Running /utils/init.sh (this may take several minutes)...")
-        result = await self._run_command(cmd, timeout=900)  # 15 minute timeout
+        result = await self._run_command(cmd, timeout=1800)  # 30 minute timeout (init.sh can take 5-10 minutes)
         
         if result["returncode"] == 0:
             print(f"✓ Task environment initialized successfully")
@@ -273,7 +273,7 @@ class DockerManager:
         print(f"    2. /utils/eval.py - Runs evaluation (usually 1-2 minutes)")
         import time as time_module
         start_time = time_module.time()
-        result = await self._run_command(cmd, timeout=900)  # 15 minute timeout
+        result = await self._run_command(cmd, timeout=1800)  # 30 minute timeout (init.sh can take 5-10 minutes)
         elapsed = time_module.time() - start_time
         print(f"  Total time: {elapsed:.1f} seconds ({elapsed/60:.1f} minutes)")
         

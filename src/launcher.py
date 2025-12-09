@@ -93,8 +93,9 @@ Use the following evaluation configuration:
     print("Sending...")
     
     try:
-        # Use longer timeout for evaluation (15 minutes)
-        response = await send_message_to_agent(green_url, task_text, timeout=900.0)
+        # Use longer timeout for evaluation (30 minutes)
+        # Docker evaluation can take 5-10 minutes per task, plus processing time
+        response = await send_message_to_agent(green_url, task_text, timeout=1800.0)
         
         # Extract and print response
         print("\n" + "=" * 60)

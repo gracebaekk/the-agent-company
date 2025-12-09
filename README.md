@@ -12,6 +12,33 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Troubleshooting: Permission Denied Error
+
+If you encounter a "Permission denied" error when running `./run.sh`, make sure the script has execute permissions:
+
+```bash
+chmod +x run.sh
+```
+
+This may be needed after cloning the repository, as Git may not preserve execute permissions on shell scripts.
+
+## Prerequisites
+
+### Start TAC Services
+
+Before running evaluations, you need to start the TAC services (GitLab, RocketChat, Plane, OwnCloud):
+
+```bash
+cd external/tac/servers
+bash setup.sh
+```
+
+This will start all services on `localhost` with the following ports:
+- RocketChat: `http://localhost:3000`
+- OwnCloud: `http://localhost:8092`
+- GitLab: `http://localhost:8929`
+- Plane: `http://localhost:8091`
+
 ## Running the Green Agent
 
 ### Local Development with AgentBeats
@@ -32,12 +59,38 @@ python main.py green
 
 Runs on `http://localhost:9001` by default.
 
+### Running the White Agent
+
+```bash
+python main.py white
+```
+
+Runs on `http://localhost:9002` by default.
+
+**Note:** The White agent requires:
+- TAC services to be running (see Prerequisites above)
+- API key configured in `.env` file (see `.env.example`)
+- Playwright installed for browser automation: `playwright install chromium`
+
 ### Environment Variables
 
+**Green Agent:**
 - `AGENT_PORT`: Port number (default: `9001`)
 - `HTTPS_ENABLED`: Enable HTTPS URLs (default: `false`)
 - `CLOUDRUN_HOST`: External hostname for deployed services
 - `ROLE`: Set to `green` for green agent
+
+**White Agent:**
+- `AGENT_PORT`: Port number (default: `9002`)
+- `AGENT_MODEL`: LLM model to use (default: `openai/gpt-4o`)
+- `AGENT_PROVIDER`: LLM provider (default: `openai`)
+- `OPENAI_API_KEY`: API key for LLM (or `AGENT_API_KEY`, `LITELLM_API_KEY`)
+- `HOST`: Host to bind to (default: `0.0.0.0`)
+
+**Evaluation:**
+- `SERVER_HOSTNAME`: Hostname where TAC services are running (default: `localhost`)
+- `LITELLM_API_KEY`: API key for evaluation LLM
+- `LITELLM_MODEL`: Model for evaluation (default: `openai/gpt-4o`)
 
 ## Testing
 
