@@ -63,11 +63,32 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
         model = os.getenv("AGENT_MODEL", "openai/gpt-4o")
         provider = os.getenv("AGENT_PROVIDER", "openai")
         
+        # Get API key - try multiple environment variable names
+        api_key = (
+            os.getenv("OPENAI_API_KEY") or 
+            os.getenv("AGENT_API_KEY") or 
+            os.getenv("LITELLM_API_KEY")
+        )
+        
+        if not api_key:
+            error_msg = (
+                "Error: No API key found. Please set one of:\n"
+                "  - OPENAI_API_KEY\n"
+                "  - AGENT_API_KEY\n"
+                "  - LITELLM_API_KEY\n"
+                "in your .env file or environment variables."
+            )
+            await event_queue.enqueue_event(
+                new_agent_text_message(error_msg, context_id=context.context_id)
+            )
+            return
+        
         response = completion(
             messages=messages,
             model=model,
             custom_llm_provider=provider,
             temperature=0.0,
+            api_key=api_key,
         )
         
         next_message = response.choices[0].message.model_dump()  # type: ignore

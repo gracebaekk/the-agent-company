@@ -70,12 +70,8 @@ async def launch_evaluation():
     # Send the task description to green agent
     print("Sending task description to green agent...")
     task_config = {
-        "scenario": "demo",
-        "agent_model": "openai/gpt-4o",
-        "agent_provider": "openai",
-        "user_model": "openai/gpt-4o",
-        "user_provider": "openai",
-        "task_ids": [1]
+        "task_subset": "beginner",
+        "max_tasks": 1
     }
     
     task_text = f"""
@@ -97,18 +93,34 @@ Use the following evaluation configuration:
     print("Sending...")
     
     try:
-        response = await send_message_to_agent(green_url, task_text)
-        print("Response from green agent:")
+        # Use longer timeout for evaluation (15 minutes)
+        response = await send_message_to_agent(green_url, task_text, timeout=900.0)
+        
+        # Extract and print response
+        print("\n" + "=" * 60)
+        print("GREEN AGENT RESPONSE:")
+        print("=" * 60)
+        
         if hasattr(response, 'result') and hasattr(response.result, 'parts'):
-            message_text = ' '.join([
-                part.root.text for part in response.result.parts 
-                if hasattr(part, 'root') and hasattr(part.root, 'text')
-            ])
-            print(message_text)
+            full_text = []
+            for part in response.result.parts:
+                if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                    full_text.append(part.root.text)
+            
+            complete_response = '\n'.join(full_text)
+            print(complete_response)
+            
+            # Save results to file
+            output_file = 'evaluation_results.txt'
+            with open(output_file, 'w') as f:
+                f.write(complete_response)
+            print(f"\n✓ Results saved to: {output_file}")
         else:
             print(response)
+        
+        print("\n✓ Evaluation request completed!")
     except Exception as e:
-        print(f"Error sending task: {e}")
+        print(f"❌ Error sending task: {e}")
         import traceback
         traceback.print_exc()
 

@@ -47,6 +47,21 @@ Runs on `http://localhost:9001` by default.
 python main.py test --url http://localhost:9001 --message "Hello!"
 ```
 
+### Test Evaluation Workflow
+
+```bash
+# Run full evaluation test
+python -m tests.test_evaluation
+
+# Check evaluation results
+python -m tests.check_results
+
+# View full results
+python -m tests.view_full_results
+```
+
+See `tests/README.md` for more details.
+
 ### Test Agent Card
 
 ```bash
@@ -127,3 +142,25 @@ The green agent uses this evaluation config format:
 ```
 
 Customize in `src/green_agent/green_agent.toml`.
+
+## Project Structure
+
+```
+the-agent-company/
+├── src/                    # Source code
+│   ├── green_agent/        # Green agent (assessor) implementation
+│   ├── white_agent/        # White agent (target) implementation
+│   └── utils/              # Utility functions
+├── tests/                  # Test scripts
+├── scripts/                # Utility scripts
+│   └── utils/              # Helper scripts (e.g., precomputation)
+├── docs/                   # Documentation
+├── external/               # External dependencies (TAC framework)
+├── main.py                 # Main entry point
+├── requirements.txt        # Python dependencies
+└── README.md               # This file
+```
+
+For detailed documentation, see:
+- `docs/IMPLEMENTATION.md` - Full implementation guide
+- `docs/TESTING_GUIDE.md` - Testing and evaluation guide

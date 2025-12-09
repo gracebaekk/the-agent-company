@@ -33,3 +33,15 @@ Thumbs.db
 
 # AgentBeats / Earthshaker
 .ab/
+
+# Precomputed data (optional - you can commit these)
+# src/green_agent/precomputed/task_instructions.json
+# src/green_agent/precomputed/trajectories/*.json
+
+# Test outputs
+tests/__pycache__/
+*.pyc
+*.pyo
+
+# Documentation build (if added later)
+docs/_build/
