@@ -189,12 +189,13 @@ class TACEvaluator:
                 task_context_id = context_id or str(uuid.uuid4())
                 
                 # Send initial task instruction
-                print(f"[TIMING] Sending message to white agent (timeout: 300s)...")
+                # Some tasks involve OCR, network access and LLM retries; increase timeout
+                print(f"[TIMING] Sending message to white agent (timeout: 900s)...")
                 response = await send_message_to_agent(
                     self.white_agent_url,
                     task_instruction,
                     context_id=task_context_id,
-                    timeout=300.0
+                    timeout=900.0
                 )
                 
                 # Extract agent response

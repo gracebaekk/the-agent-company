@@ -224,6 +224,9 @@ class DockerManager:
             # On Mac, add host.docker.internal for accessing host services
             cmd.extend(["--add-host", "the-agent-company.com:host-gateway"])
         
+        # Mount /tmp/workspace as /workspace so agent output can be seen by evaluation
+        cmd.extend(["-v", "/tmp/workspace:/workspace:rw"])
+        
         # Mount trajectory and output directories
         # If they're in the same directory, only mount once
         trajectory_dir = os.path.dirname(trajectory_path)
@@ -248,11 +251,16 @@ class DockerManager:
         
         # Run init.sh and then eval.py in sequence
         # Using bash -c to chain commands with timing
-        # Note: eval.py uses --result_path, not --output_path
+        # Note: For external agents (running on host), we SKIP the reset.sh
+        # because the agent has already modified the services and we don't want to undo that
+        # We create a custom init that only sets up hostnames without resetting
         init_and_eval = (
-            f"echo '=== Starting /utils/init.sh ===' && "
-            f"time bash /utils/init.sh && "
-            f"echo '=== init.sh completed, starting eval.py ===' && "
+            f"echo '=== Setting up hostname resolution ===' && "
+            f"SERVICE_IP=$(getent hosts ${{SERVER_HOSTNAME:-localhost}} | awk '{{print $1}}' || echo 'host-gateway') && "
+            f"echo \"$SERVICE_IP the-agent-company.com\" >> /etc/hosts && "
+            f"echo 'Hostname resolution configured' && "
+            f"echo '=== Skipping reset.sh (external agent mode) ===' && "
+            f"echo '=== Starting eval.py ===' && "
             f"time python_default /utils/eval.py "
             f"--trajectory_path {trajectory_path} "
             f"--result_path {output_path} && "

@@ -71,7 +71,7 @@ async def launch_evaluation():
     print("Sending task description to green agent...")
     task_config = {
         "task_subset": "beginner",
-        "max_tasks": 1
+        "max_tasks": 4  # Run all 4 beginner tasks
     }
     
     task_text = f"""
