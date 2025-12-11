@@ -61,6 +61,12 @@ class TACEvaluator:
             use_host_network: Whether to use Docker host networking
         """
         self.white_agent_url = white_agent_url.rstrip('/')
+        
+        # On Mac, use host.docker.internal to reach host services from containers
+        import platform
+        if platform.system() == "Darwin" and server_hostname == "localhost":
+            server_hostname = "host.docker.internal"
+        
         self.server_hostname = server_hostname
         self.env_llm_config = env_llm_config or {}
         self.output_dir = output_dir or tempfile.mkdtemp(prefix="tac_eval_")
@@ -176,6 +182,26 @@ class TACEvaluator:
                 shutil.copy(precomputed_trajectory_path, trajectory_path)
                 print(f"✓ Copied precomputed trajectory to {trajectory_path}")
             else:
+                # Step 3.5: Initialize NPC environment BEFORE running agent
+                step_start = time.time()
+                print(f"[TIMING] Step 3.5: Initializing NPC environment...")
+                npc_container_name = f"tac_npc_{task_name}_{os.getpid()}"
+                try:
+                    # Start NPCs in background - they need to be running while agent works
+                    npc_result = await self.docker_manager.start_npc_environment(
+                        task_image,
+                        npc_container_name,
+                        self.server_hostname,
+                        self.env_llm_config,
+                    )
+                    if npc_result:
+                        print(f"✓ NPC environment started")
+                    else:
+                        print(f"⚠️  NPC environment failed to start (task may not need NPCs)")
+                except Exception as e:
+                    print(f"⚠️  NPC environment error: {e} (continuing anyway)")
+                print(f"[TIMING] Step 3.5 completed in {time.time() - step_start:.2f}s")
+                
                 # Step 4: Send task to white agent and collect responses
                 step_start = time.time()
                 print(f"[TIMING] Step 4: Sending task to white agent at {self.white_agent_url}...")
@@ -189,19 +215,25 @@ class TACEvaluator:
                 task_context_id = context_id or str(uuid.uuid4())
                 
                 # Send initial task instruction
-                # Some tasks involve OCR, network access and LLM retries; increase timeout
-                print(f"[TIMING] Sending message to white agent (timeout: 900s)...")
+                # 300s (5 min) timeout - successful runs complete much faster
+                print(f"[TIMING] Sending message to white agent (timeout: 300s)...")
                 response = await send_message_to_agent(
                     self.white_agent_url,
                     task_instruction,
                     context_id=task_context_id,
-                    timeout=900.0
+                    timeout=300.0
                 )
                 
                 # Extract agent response
                 agent_response = self._extract_message_text(response)
                 trajectory_collector.add_message("agent", agent_response)
                 print(f"[TIMING] Step 4 completed in {time.time() - step_start:.2f}s")
+                
+                # Stop NPC container now that agent is done
+                try:
+                    await self.docker_manager.stop_npc_environment(npc_container_name)
+                except Exception:
+                    pass  # Ignore cleanup errors
                 
                 # Step 5: Save trajectory
                 trajectory_path = os.path.join(

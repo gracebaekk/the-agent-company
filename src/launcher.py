@@ -3,9 +3,27 @@
 import asyncio
 import json
 import multiprocessing
+import os
+from pathlib import Path
 from src.green_agent import start_green_agent
 from src.white_agent import start_white_agent
 from src.utils.a2a_client import send_message_to_agent, wait_agent_ready
+
+
+def load_env_file():
+    """Load .env file from project root."""
+    env_file = Path(__file__).parent.parent / ".env"
+    if env_file.exists():
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key] = value
+
+
+# Load environment variables at import time
+load_env_file()
 
 
 async def test_send_message(agent_url="http://localhost:9001", message="Hello from launcher!"):
@@ -93,8 +111,8 @@ Use the following evaluation configuration:
     print("Sending...")
     
     try:
-        # Use longer timeout for evaluation (15 minutes)
-        response = await send_message_to_agent(green_url, task_text, timeout=900.0)
+        # 10 minute timeout - increased for complex tasks with Vision API
+        response = await send_message_to_agent(green_url, task_text, timeout=600.0)
         
         # Extract and print response
         print("\n" + "=" * 60)

@@ -8,9 +8,9 @@ import random
 TASK_SUBSETS = {
     "beginner": [
         "pm-send-hello-message",
-        "sde-create-new-repo",
-        "hr-check-attendance-one-day",
-        "finance-qualified-bill-ask-for-reimburse",
+        #"sde-create-new-repo",
+        #"hr-check-attendance-one-day",
+        #"finance-qualified-bill-ask-for-reimburse",
     ],
     "intermediate": [
         "pm-schedule-meeting-2",

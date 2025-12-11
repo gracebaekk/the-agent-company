@@ -166,6 +166,108 @@ class DockerManager:
             print(f"✗ Task initialization failed: {result['stderr']}")
             return False
     
+    async def start_npc_environment(
+        self,
+        image_name: str,
+        container_name: str,
+        server_hostname: str,
+        env_llm_config: Dict[str, str],
+    ) -> bool:
+        """
+        Start NPC bots in background so they can respond to agent messages.
+        
+        This runs /utils/init.sh in a container that stays running in the background.
+        The NPCs will listen for RocketChat messages and respond accordingly.
+        
+        Args:
+            image_name: Docker image name
+            container_name: Name for the container
+            server_hostname: Hostname where TAC services are running
+            env_llm_config: Environment LLM configuration
+        
+        Returns:
+            True if NPCs started successfully, False otherwise
+        """
+        # First, clean up any existing container with same name
+        cleanup_cmd = ["docker", "rm", "-f", container_name]
+        await self._run_command(cleanup_cmd, timeout=30)
+        
+        # For Docker containers on Mac, we need to use host.docker.internal to reach host services
+        # The NPC code uses BOT_URL for RocketChat connection
+        if self.is_mac:
+            rocketchat_url = f"http://host.docker.internal:3000"
+        else:
+            rocketchat_url = f"http://{server_hostname}:3000"
+        
+        # Build environment variables
+        env_vars = {
+            "SERVER_HOSTNAME": server_hostname,
+            "BOT_URL": rocketchat_url,  # Critical: NPC bots use this to connect to RocketChat
+            "LITELLM_API_KEY": env_llm_config.get("api_key", ""),
+            "LITELLM_BASE_URL": env_llm_config.get("base_url", ""),
+            "LITELLM_MODEL": env_llm_config.get("model", "openai/gpt-4o"),
+        }
+        
+        # Build docker run command - run init.sh and keep container alive
+        cmd = ["docker", "run", "-d"]  # detached mode
+        
+        # Add platform flag for Apple Silicon compatibility
+        if self.needs_platform_flag:
+            cmd.extend(["--platform", "linux/amd64"])
+        
+        # On Mac, add hostname mapping for accessing host services
+        if self.is_mac:
+            cmd.extend(["--add-host", "the-agent-company.com:host-gateway"])
+        
+        # Add environment variables
+        for key, value in env_vars.items():
+            if value:
+                cmd.extend(["-e", f"{key}={value}"])
+        
+        cmd.extend([
+            "--name", container_name,
+            image_name,
+            # Skip reset.sh (requires API server on port 2999 which we don't run locally)
+            # Just run the NPC bots directly if scenarios.json exists
+            "bash", "-c", 
+            "if [ -f /npc/scenarios.json ]; then "
+            "python_default /npc/run_multi_npc.py && sleep infinity; "
+            "else echo 'No NPC scenarios for this task' && sleep infinity; fi"
+        ])
+        
+        # Start the NPC container in background
+        result = await self._run_command(cmd, timeout=120)  # 2 min to start
+        
+        if result["returncode"] == 0:
+            # Wait for NPC bots to actually start listening
+            # The init.sh does: reset.sh, run_multi_npc.py (which sleeps 30s), populate_data.py
+            # We need to wait longer for NPCs to actually be ready
+            import asyncio
+            print("  Waiting for NPC bots to initialize (35 seconds)...")
+            await asyncio.sleep(35)
+            
+            # Verify the container is still running
+            check_cmd = ["docker", "ps", "-q", "-f", f"name={container_name}"]
+            check_result = await self._run_command(check_cmd, timeout=10)
+            if check_result["stdout"].strip():
+                print("  ✓ NPC container is running")
+                return True
+            else:
+                print("  ⚠️  NPC container exited prematurely")
+                # Get logs for debugging
+                logs_cmd = ["docker", "logs", "--tail", "50", container_name]
+                logs_result = await self._run_command(logs_cmd, timeout=10)
+                print(f"  Container logs: {logs_result['stdout'][:500]}")
+                return False
+        else:
+            print(f"⚠️  NPC container failed to start: {result['stderr']}")
+            return False
+    
+    async def stop_npc_environment(self, container_name: str) -> None:
+        """Stop and remove the NPC container."""
+        cmd = ["docker", "rm", "-f", container_name]
+        await self._run_command(cmd, timeout=30)
+    
     async def run_evaluation(
         self,
         image_name: str,

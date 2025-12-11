@@ -14,11 +14,7 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentSkill, AgentCard, AgentCapabilities
 from a2a.utils import new_agent_text_message
-import litellm
 from litellm import completion
-
-# Suppress LiteLLM info banners
-litellm.suppress_debug_info = True
 
 load_dotenv()
 
@@ -96,31 +92,22 @@ def execute_bash(command: str) -> Dict[str, Any]:
         if platform.system() == "Darwin":  # macOS
             command = command.replace("/workspace", "/tmp/workspace")
         
-        # Fix escaped newlines in python -c commands - convert literal \n to actual newlines
-        # This handles cases where the LLM sends "python -c 'code\nmore code'"
-        if 'python' in command and '\\n' in command:
-            # For python -c commands with escaped newlines, write to a temp script instead
-            import re
-            match = re.search(r'python[3]?\s+-c\s+["\'](.+)["\']', command, re.DOTALL)
-            if match:
-                python_code = match.group(1)
-                # Convert escaped newlines to actual newlines
-                python_code = python_code.replace('\\n', '\n')
-                # Also apply workspace substitution to the code (Mac only)
-                if platform.system() == "Darwin":
-                    python_code = python_code.replace("/workspace", "/tmp/workspace")
-                # Write to temp script and execute that instead
-                temp_script = "/tmp/agent_temp_script.py"
-                with open(temp_script, 'w') as f:
-                    f.write(python_code)
-                command = f"python3 {temp_script}"
+        # Fix escaped quotes that come from LLM - the shell expects unescaped quotes
+        # inside the command string. The LLM sometimes sends \' which should be '
+        command = command.replace("\\'", "'")
+        command = command.replace('\\"', '"')
+        
+        # Note: We previously tried to handle escaped newlines in python -c commands
+        # but it's complex because we need to distinguish between newlines in strings
+        # vs newlines as code structure. The shell handles this correctly, so just
+        # run the command as-is.
         
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=60  # Increased timeout for network operations
+            timeout=120  # Increased timeout for slow GitLab operations
         )
         
         return {
@@ -259,11 +246,25 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
                     "- write_file: Write content to files\n\n"
                     "SERVICE CREDENTIALS (IMPORTANT!):\n"
                     "- ownCloud (http://localhost:8092): Username: theagentcompany, Password: theagentcompany\n"
-                    "  - Download files: curl -u theagentcompany:theagentcompany -o file.csv 'http://localhost:8092/remote.php/webdav/path/to/file'\n"
+                    "  - Download files via WebDAV (EXACT syntax): curl -u theagentcompany:theagentcompany -o output.jpg 'http://localhost:8092/remote.php/webdav/Documents/Financials/receipt.jpg'\n"
+                    "  - Download PDF: curl -u theagentcompany:theagentcompany -o policy.pdf 'http://localhost:8092/remote.php/webdav/Documents/Administrative%20Specialist/Reimbursement%20Policy.pdf'\n"
+                    "  - NOTE: URL-encode spaces as %20 in paths. The path starts DIRECTLY with the folder name (e.g., Documents/...)\n"
                     "- GitLab (http://localhost:8929): Username: root, Password: theagentcompany\n"
-                    "  - API Token: Use -H 'PRIVATE-TOKEN: ...' after logging in\n"
+                    "  - API Token: root-token (use -H 'PRIVATE-TOKEN: root-token' for ALL API requests)\n"
+                    "  - Create repo: curl -X POST -H 'PRIVATE-TOKEN: root-token' -H 'Content-Type: application/json' -d '{\"name\":\"New Storage Project\",\"path\":\"new-storage-project\",\"visibility\":\"public\"}' http://localhost:8929/api/v4/projects\n"
+                    "  - Create/update file: curl -X POST -H 'PRIVATE-TOKEN: root-token' -H 'Content-Type: application/json' -d '{\"branch\":\"main\",\"content\":\"...\",\"commit_message\":\"...\"}' 'http://localhost:8929/api/v4/projects/root%2Fnew-storage-project/repository/files/README.md'\n"
                     "- RocketChat (http://localhost:3000): Login via API first to get tokens\n"
-                    "  - Login: curl -X POST -H 'Content-Type: application/json' -d '{\"user\":\"...\",\"password\":\"theagentcompany\"}' http://localhost:3000/api/v1/login\n"
+                    "  ROCKETCHAT API CRITICAL: ALL POST requests MUST include -H 'Content-Type: application/json'\n"
+                    "  - Login: curl -X POST -H 'Content-Type: application/json' -d '{\"user\":\"theagentcompany\",\"password\":\"theagentcompany\"}' http://localhost:3000/api/v1/login\n"
+                    "  - For emojis, use the TEXT CODE like :kissing_smiling_eyes: NOT the unicode emoji 😘\n"
+                    "  - To NOTIFY ACTIVE USERS in a room, include @here in your message text\n"
+                    "  - Example message with emoji and notification: \"Hi :kissing_smiling_eyes: @here\"\n"
+                    "  - Create DM room with user: curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"username\":\"zhang_wei\"}' http://localhost:3000/api/v1/im.create\n"
+                    "  - Send message to DM: curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"channel\":\"@zhang_wei\",\"text\":\"Hello!\"}' http://localhost:3000/api/v1/chat.postMessage\n"
+                    "  - CONVERSATIONS WITH NPCS: After sending a DM, wait (sleep 5) then retrieve the response!\n"
+                    "  - Get DM messages: curl -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/im.messages?roomId=ROOMID'\n"
+                    "  - The ROOMID is returned from im.create as room._id\n"
+                    "  - NPCs will respond with important info - you MUST read their responses and use that info in your work!\n"
                     "- Plane (http://localhost:8091): Check for API documentation\n\n"
                     "TIME HANDLING (IMPORTANT!):\n"
                     "When comparing times in CSV data, ALWAYS convert to minutes or datetime objects. "
@@ -277,16 +278,25 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
                     "  df = pd.read_csv('file.csv')\n"
                     "  df.columns = df.columns.str.strip()  # Remove whitespace from column names\n"
                     "  df = df.apply(lambda x: x.str.strip() if x.dtype == 'object' else x)  # Strip string values\n\n"
-                    "OWNCLOUD FILE ACCESS (CRITICAL!):\n"
-                    "When accessing files on ownCloud, you MUST navigate through the directory structure:\n"
-                    "1. First browse to each directory by making a request with 'dir=' in the URL\n"
-                    "2. Use format: curl -u theagentcompany:theagentcompany 'http://localhost:8092/index.php/apps/files/?dir=/Documents/FolderName'\n"
-                    "3. You MUST browse to the folder BEFORE downloading files from it\n"
-                    "Example:\n"
-                    "  # Navigate to Financials folder\n"
+                    "OWNCLOUD FILE ACCESS (CRITICAL - DO BOTH STEPS!):\n"
+                    "Step 1: FIRST browse to the folder (required for tracking):\n"
                     "  curl -u theagentcompany:theagentcompany 'http://localhost:8092/index.php/apps/files/?dir=/Documents/Financials'\n"
-                    "  # Navigate to Administrative Specialist folder\n"
-                    "  curl -u theagentcompany:theagentcompany 'http://localhost:8092/index.php/apps/files/?dir=/Documents/Administrative%20Specialist'\n\n"
+                    "  curl -u theagentcompany:theagentcompany 'http://localhost:8092/index.php/apps/files/?dir=/Documents/Administrative%20Specialist'\n"
+                    "Step 2: THEN download the file via WebDAV:\n"
+                    "  curl -u theagentcompany:theagentcompany -o receipt.jpg 'http://localhost:8092/remote.php/webdav/Documents/Financials/receipt.jpg'\n"
+                    "  curl -u theagentcompany:theagentcompany -o policy.pdf 'http://localhost:8092/remote.php/webdav/Documents/Administrative%20Specialist/Reimbursement%20Policy.pdf'\n"
+                    "NOTE: URL-encode spaces as %20.\n\n"
+                    "EXTRACTING TEXT FROM FILES:\n"
+                    "- For PDF files: pip install pdfplumber && python -c \"import pdfplumber; print(pdfplumber.open('policy.pdf').pages[0].extract_text())\"\n"
+                    "- For images: Write and run a script file:\n"
+                    "  cat > read_image.py << 'EOF'\n"
+                    "import base64\n"
+                    "from openai import OpenAI\n"
+                    "b64 = base64.b64encode(open('receipt.jpg','rb').read()).decode()\n"
+                    "r = OpenAI().chat.completions.create(model='gpt-4o', messages=[{'role':'user','content':[{'type':'text','text':'Extract all text from this receipt'},{'type':'image_url','image_url':{'url':f'data:image/jpeg;base64,{b64}'}}]}])\n"
+                    "print(r.choices[0].message.content)\n"
+                    "EOF\n"
+                    "python read_image.py\n\n"
                     "REIMBURSEMENT CALCULATIONS (CRITICAL!):\n"
                     "When calculating reimbursable amounts from receipts:\n"
                     "1. The full subtotal amount IS reimbursable (no per-person limit applies)\n"
@@ -337,6 +347,9 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
         # Collect all output to send at the end
         execution_log = []
         
+        # Track recent commands to detect loops
+        recent_commands = []
+        
         # Agent loop with tool calling
         iteration = 0
         while iteration < self.max_iterations:
@@ -370,8 +383,40 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
                         tool_name = tool_call.function.name
                         tool_args = json.loads(tool_call.function.arguments)
                         
-                        # Execute the tool
+                        # Execute the tool first
                         tool_result = execute_tool(tool_name, tool_args)
+                        
+                        # Create a signature that includes the result status for loop detection
+                        command_signature = f"{tool_name}:{json.dumps(tool_args, sort_keys=True)}:failed={not tool_result.get('success', False)}"
+                        recent_commands.append(command_signature)
+                        
+                        # Keep only last 10 commands to save memory
+                        if len(recent_commands) > 10:
+                            recent_commands = recent_commands[-10:]
+                        
+                        # Check if the same FAILING command has been repeated 3+ times in last 5 commands
+                        # Only trigger loop detection for failures, not successful commands
+                        if not tool_result.get('success', False):
+                            last_5 = recent_commands[-5:] if len(recent_commands) >= 5 else recent_commands
+                            if last_5.count(command_signature) >= 3:
+                                # Stuck in a loop of failures! Add hint to messages
+                                loop_warning = (
+                                    f"LOOP DETECTED: The same command has FAILED 3+ times with the same error. "
+                                    f"The command '{tool_name}' keeps failing. Try a DIFFERENT approach:\n"
+                                    f"- For RocketChat API: Make sure ALL POST requests include -H 'Content-Type: application/json'\n"
+                                    f"- Check the API documentation or error message for correct syntax\n"
+                                    f"- Try a simpler test command first to verify connectivity\n"
+                                    f"- Last error: {tool_result.get('error', 'Unknown')[:200]}"
+                                )
+                                execution_log.append(f"⚠️ {loop_warning}")
+                                # Add the loop warning as a tool result so the model knows
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": tool_name,
+                                    "content": json.dumps({"success": False, "error": loop_warning})
+                                })
+                                continue  # Skip the normal result processing, let LLM try something else
                         
                         # Log progress (collect instead of sending immediately)
                         # Include full tool argument values (do not truncate) so evaluators can
@@ -386,23 +431,37 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
                             arg_strs.append(f"{k}={arg_val}")
                         progress_msg = f"🔧 Executing: {tool_name}({', '.join(arg_strs)})\n"
                         if tool_result.get("success"):
-                            if "stdout" in tool_result:
-                                progress_msg += f"Output: {tool_result['stdout'][:300]}"
+                            stdout = tool_result.get('stdout', '')
+                            stderr = tool_result.get('stderr', '')
+                            if stdout:
+                                progress_msg += f"Output: {stdout[:300]}"
+                            elif stderr:
+                                progress_msg += f"Stderr: {stderr[:300]}"
                             elif "content" in tool_result:
                                 progress_msg += f"Content: {tool_result['content'][:300]}"
                             elif "message" in tool_result:
                                 progress_msg += f"{tool_result['message']}"
+                            else:
+                                progress_msg += f"(command completed with no output)"
                         else:
                             progress_msg += f"Error: {tool_result.get('error', 'Unknown error')}"
                         
                         execution_log.append(progress_msg)
+                        
+                        # Truncate tool result to avoid context window overflow
+                        # Keep only essential info for the LLM to reason about
+                        truncated_result = tool_result.copy()
+                        for key in ['stdout', 'content', 'message', 'error']:
+                            if key in truncated_result and isinstance(truncated_result[key], str):
+                                if len(truncated_result[key]) > 2000:
+                                    truncated_result[key] = truncated_result[key][:2000] + "... [truncated]"
                         
                         # Add tool result to messages
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_name,
-                            "content": json.dumps(tool_result)
+                            "content": json.dumps(truncated_result)
                         })
                     
                     # Continue the loop to get the next response

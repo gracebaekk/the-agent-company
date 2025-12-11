@@ -1,0 +1,1 @@
+Zhang Wei has provided the following tasks for the new storage project: 1. Set up the storage architecture. 2. Implement data redundancy. 3. Ensure security protocols are in place.
