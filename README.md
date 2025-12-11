@@ -12,9 +12,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Running the Green Agent
+## Running the Agents
 
-### Local Development with AgentBeats
+### Green Agent - Local Development with AgentBeats
 
 ```bash
 export HTTPS_ENABLED=true
@@ -24,13 +24,23 @@ agentbeats run_ctrl
 
 Access the controller at `http://localhost:8010/info`.
 
-### Direct Python Execution
+### Green Agent - Direct Python Execution
 
 ```bash
 python main.py green
 ```
 
 Runs on `http://localhost:9001` by default.
+
+### White Agent - Direct Python Execution
+
+```bash
+python main.py white
+```
+
+Runs on `http://localhost:9002` by default.
+
+**Note:** White agent should be run directly with `python main.py white` rather than using `agentbeats run_ctrl`, as agentbeats may not properly handle white agents.
 
 ### Environment Variables
 
@@ -105,26 +115,6 @@ gcloud run services update agent-company-green-agent \
   --region us-central1 \
   --update-env-vars "ROLE=green,HTTPS_ENABLED=true,CLOUDRUN_HOST=${SERVICE_URL#https://}"
 ```
-
-### Local Development with External Access (ngrok)
-
-```bash
-# Terminal 1: Start ngrok
-ngrok http 8010
-
-# Terminal 2: Run with ngrok URL
-HTTPS_ENABLED=true CLOUDRUN_HOST=xxxx-xxxx.ngrok-free.dev ROLE=green agentbeats run_ctrl
-```
-
-## AgentBeats Platform Integration
-
-1. Register agent with Controller URL (root URL, no `/info`):
-   - Cloud Run: `https://your-service-url.run.app`
-   - ngrok: `https://your-ngrok-url.ngrok-free.dev`
-
-2. Set "Deploy Type" to "Remote" and check "Is Assessor (Green) Agent"
-
-3. Click "Check Again" to verify agent card loads
 
 ## Evaluation Configuration
 

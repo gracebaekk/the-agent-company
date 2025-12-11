@@ -154,7 +154,9 @@ class GreenAgentExecutor(AgentExecutor):
 def start_green_agent(host=None, port=None):
     # Use environment variables if provided, otherwise use defaults
     host = host or os.getenv("HOST", "0.0.0.0")
-    port = port or int(os.getenv("AGENT_PORT", "9001"))
+    # Prioritize port argument (from agentbeats), then AGENT_PORT (set by agentbeats), then PORT (Cloud Run default), then default
+    # AGENT_PORT is set by agentbeats when it spawns the agent process
+    port = port or int(os.getenv("AGENT_PORT") or os.getenv("PORT") or "9001")
     
     card_dict = load_card()
     
@@ -163,7 +165,6 @@ def start_green_agent(host=None, port=None):
     cloudrun_host = os.getenv("CLOUDRUN_HOST")
     
     if cloudrun_host:
-        # Use Cloudflare tunnel domain
         protocol = "https" if https_enabled else "http"
         card_dict["url"] = f"{protocol}://{cloudrun_host}"
     else:

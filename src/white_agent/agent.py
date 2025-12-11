@@ -515,10 +515,24 @@ def start_white_agent(agent_name="general_white_agent", host=None, port=None):
     """Start the white agent server."""
     # Use environment variables if provided, otherwise use defaults
     host = host or os.getenv("HOST", "0.0.0.0")
-    port = port or int(os.getenv("AGENT_PORT", "9002"))
+    # Prioritize port argument (from agentbeats), then AGENT_PORT (set by agentbeats), then PORT (Cloud Run default), then default
+    # AGENT_PORT is set by agentbeats when it spawns the agent process
+    port = port or int(os.getenv("AGENT_PORT") or os.getenv("PORT") or "9002")
+    
+    # Determine the agent URL based on HTTPS_ENABLED and CLOUDRUN_HOST (like green agent)
+    https_enabled = os.getenv("HTTPS_ENABLED", "false").lower() == "true"
+    cloudrun_host = os.getenv("CLOUDRUN_HOST")
+    
+    if cloudrun_host:
+        # Use Cloud Run hostname (agentbeats will handle port assignment via port argument)
+        protocol = "https" if https_enabled else "http"
+        url = f"{protocol}://{cloudrun_host}"
+    else:
+        # Use local host and port
+        protocol = "https" if https_enabled else "http"
+        url = f"{protocol}://{host}:{port}"
     
     print("Starting white agent...")
-    url = f"http://{host}:{port}"
     card = prepare_white_agent_card(url)
     
     request_handler = DefaultRequestHandler(
@@ -529,8 +543,8 @@ def start_white_agent(agent_name="general_white_agent", host=None, port=None):
     app = A2AStarletteApplication(
         agent_card=card,
         http_handler=request_handler,
-    )
+    ).build()
     
-    print(f"Starting white agent at: {url}")
-    uvicorn.run(app.build(), host=host, port=port)
+    print(f"Starting white agent at: http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)
 

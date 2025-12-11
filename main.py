@@ -17,9 +17,17 @@ def green():
 
 
 @app.command()
-def run():
-    """Run the green agent (used by controller)."""
-    start_green_agent()
+def run(port: int = None):
+    """Run the agent based on ROLE environment variable (used by controller)."""
+    role = os.getenv("ROLE", "green")
+    # If port is provided (by agentbeats), use it; otherwise use environment variables
+    # AGENT_PORT is set by agentbeats when it spawns the agent process
+    if port is None:
+        port = int(os.getenv("AGENT_PORT") or os.getenv("PORT") or 0)
+    if role == "white":
+        start_white_agent(port=port if port > 0 else None)
+    else:
+        start_green_agent(port=port if port > 0 else None)
 
 
 @app.command()
