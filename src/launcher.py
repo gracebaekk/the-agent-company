@@ -19,7 +19,12 @@ def load_env_file():
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
-                    os.environ[key] = value
+                    # Don't override existing environment variables (from terminal)
+                    # Only set if not already set
+                    if key not in os.environ:
+                        # Skip placeholder values
+                        if value not in ['your-openai-api-key-here', 'your_api_key', '']:
+                            os.environ[key] = value
 
 
 # Load environment variables at import time
@@ -70,7 +75,7 @@ async def launch_evaluation():
     
     assert await wait_agent_ready(green_url), "Green agent not ready in time"
     print("Green agent is ready.")
-
+    
     # Start white agent
     print("Launching white agent...")
     white_address = ("localhost", 9002)
@@ -88,8 +93,7 @@ async def launch_evaluation():
     # Send the task description to green agent
     print("Sending task description to green agent...")
     task_config = {
-        "task_subset": "beginner",
-        "max_tasks": 4  # Run all 4 beginner tasks
+        "task_names": ["pm-change-channel-ownership"],  # Run single task
     }
     
     task_text = f"""
@@ -119,22 +123,30 @@ Use the following evaluation configuration:
         print("GREEN AGENT RESPONSE:")
         print("=" * 60)
         
+        # Extract response text
+        full_text = []
         if hasattr(response, 'result') and hasattr(response.result, 'parts'):
-            full_text = []
             for part in response.result.parts:
                 if hasattr(part, 'root') and hasattr(part.root, 'text'):
                     full_text.append(part.root.text)
-            
-            complete_response = '\n'.join(full_text)
-            print(complete_response)
-            
-            # Save results to file
-            output_file = 'evaluation_results.txt'
+        
+        if not full_text:
+            # Fallback: convert response to string
+            full_text = [str(response)]
+        
+        complete_response = '\n'.join(full_text)
+        print(complete_response)
+        
+        # Save results to file (use absolute path to project root)
+        project_root = Path(__file__).parent.parent
+        output_file = project_root / 'evaluation_results.txt'
+        try:
             with open(output_file, 'w') as f:
                 f.write(complete_response)
             print(f"\n✓ Results saved to: {output_file}")
-        else:
-            print(response)
+        except Exception as save_error:
+            print(f"\n⚠️  Failed to save results to file: {save_error}")
+            print(f"Response text (first 500 chars): {complete_response[:500]}")
         
         print("\n✓ Evaluation request completed!")
     except Exception as e:

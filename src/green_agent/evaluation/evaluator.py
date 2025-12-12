@@ -15,10 +15,9 @@ from ...utils.docker_manager import DockerManager
 from ...data.trajectory_collector import A2ATrajectoryCollector
 from ...utils.a2a_client import send_message_to_agent, wait_agent_ready
 
-# Precomputed data (now in src/data directory)
+# Task instructions data (now in src/data directory)
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 TASK_INSTRUCTIONS_FILE = DATA_DIR / "task_instructions.json"
-TRAJECTORIES_DIR = DATA_DIR / "trajectories"
 
 # Load precomputed task instructions if available
 _precomputed_instructions = None
@@ -151,16 +150,16 @@ class TACEvaluator:
                 print(f"⚠️  Task {task_name} completed with mock evaluation")
                 return task_results
             
-            # Step 2: Get task instruction (use precomputed if available, otherwise Docker)
+            # Step 2: Get task instruction (use cached if available, otherwise Docker)
             step_start = time.time()
             print(f"[TIMING] Step 2: Getting task instruction...")
             precomputed = _load_precomputed_instructions()
             
             if task_name in precomputed:
                 task_instruction = precomputed[task_name]
-                print(f"✓ Using precomputed instruction for {task_name} ({len(task_instruction)} chars)")
+                print(f"✓ Using cached instruction for {task_name} ({len(task_instruction)} chars)")
             else:
-                print(f"⚠️  No precomputed instruction for {task_name}, extracting from Docker...")
+                print(f"⚠️  No cached instruction for {task_name}, extracting from Docker...")
                 try:
                     task_instruction = await self.docker_manager.get_task_instruction(task_image)
                 except Exception as e:
@@ -168,86 +167,69 @@ class TACEvaluator:
                     task_instruction = f"Complete the task for {task_name}. This is a mock instruction."
             print(f"[TIMING] Step 2 completed in {time.time() - step_start:.2f}s")
             
-            # Step 3: Check for precomputed trajectory
-            precomputed_trajectory_path = TRAJECTORIES_DIR / f"{task_name}.json"
+            # Step 3: Initialize NPC environment BEFORE running agent
+            step_start = time.time()
+            print(f"[TIMING] Step 3: Initializing NPC environment...")
+            npc_container_name = f"tac_npc_{task_name}_{os.getpid()}"
+            try:
+                # Start NPCs in background - they need to be running while agent works
+                npc_result = await self.docker_manager.start_npc_environment(
+                    task_image,
+                    npc_container_name,
+                    self.server_hostname,
+                    self.env_llm_config,
+                )
+                if npc_result:
+                    print(f"✓ NPC environment started")
+                else:
+                    print(f"⚠️  NPC environment failed to start (task may not need NPCs)")
+            except Exception as e:
+                print(f"⚠️  NPC environment error: {e} (continuing anyway)")
+            print(f"[TIMING] Step 3 completed in {time.time() - step_start:.2f}s")
             
-            if precomputed_trajectory_path.exists():
-                print(f"✓ Using precomputed trajectory for {task_name}")
-                trajectory_path = os.path.join(
-                    self.output_dir,
-                    f"traj_{task_name}.json"
-                )
-                # Copy precomputed trajectory to output directory
-                import shutil
-                shutil.copy(precomputed_trajectory_path, trajectory_path)
-                print(f"✓ Copied precomputed trajectory to {trajectory_path}")
-            else:
-                # Step 3.5: Initialize NPC environment BEFORE running agent
-                step_start = time.time()
-                print(f"[TIMING] Step 3.5: Initializing NPC environment...")
-                npc_container_name = f"tac_npc_{task_name}_{os.getpid()}"
-                try:
-                    # Start NPCs in background - they need to be running while agent works
-                    npc_result = await self.docker_manager.start_npc_environment(
-                        task_image,
-                        npc_container_name,
-                        self.server_hostname,
-                        self.env_llm_config,
-                    )
-                    if npc_result:
-                        print(f"✓ NPC environment started")
-                    else:
-                        print(f"⚠️  NPC environment failed to start (task may not need NPCs)")
-                except Exception as e:
-                    print(f"⚠️  NPC environment error: {e} (continuing anyway)")
-                print(f"[TIMING] Step 3.5 completed in {time.time() - step_start:.2f}s")
-                
-                # Step 4: Send task to white agent and collect responses
-                step_start = time.time()
-                print(f"[TIMING] Step 4: Sending task to white agent at {self.white_agent_url}...")
-                print(f"⚠️  No precomputed trajectory found, running agent (this will likely score 0)")
-                
-                # Initialize trajectory collector
-                trajectory_collector = A2ATrajectoryCollector(task_name)
-                trajectory_collector.add_message("user", task_instruction)
-                
-                # Create a unique context ID for this task if not provided
-                task_context_id = context_id or str(uuid.uuid4())
-                
-                # Send initial task instruction
-                # 300s (5 min) timeout - successful runs complete much faster
-                print(f"[TIMING] Sending message to white agent (timeout: 300s)...")
-                response = await send_message_to_agent(
-                    self.white_agent_url,
-                    task_instruction,
-                    context_id=task_context_id,
-                    timeout=300.0
-                )
-                
-                # Extract agent response
-                agent_response = self._extract_message_text(response)
-                trajectory_collector.add_message("agent", agent_response)
-                print(f"[TIMING] Step 4 completed in {time.time() - step_start:.2f}s")
-                
-                # Stop NPC container now that agent is done
-                try:
-                    await self.docker_manager.stop_npc_environment(npc_container_name)
-                except Exception:
-                    pass  # Ignore cleanup errors
-                
-                # Step 5: Save trajectory
-                trajectory_path = os.path.join(
-                    self.output_dir,
-                    f"traj_{task_name}.json"
-                )
-                trajectory_collector.save(trajectory_path)
-                print(f"✓ Trajectory saved to {trajectory_path}")
+            # Step 4: Send task to white agent and collect responses
+            step_start = time.time()
+            print(f"[TIMING] Step 4: Sending task to white agent at {self.white_agent_url}...")
+            
+            # Initialize trajectory collector
+            trajectory_collector = A2ATrajectoryCollector(task_name)
+            trajectory_collector.add_message("user", task_instruction)
+            
+            # Create a unique context ID for this task if not provided
+            task_context_id = context_id or str(uuid.uuid4())
+            
+            # Send initial task instruction
+            # 300s (5 min) timeout - successful runs complete much faster
+            print(f"[TIMING] Sending message to white agent (timeout: 300s)...")
+            response = await send_message_to_agent(
+                self.white_agent_url,
+                task_instruction,
+                context_id=task_context_id,
+                timeout=300.0
+            )
+            
+            # Extract agent response
+            agent_response = self._extract_message_text(response)
+            trajectory_collector.add_message("agent", agent_response)
+            print(f"[TIMING] Step 4 completed in {time.time() - step_start:.2f}s")
+            
+            # Stop NPC container now that agent is done
+            try:
+                await self.docker_manager.stop_npc_environment(npc_container_name)
+            except Exception:
+                pass  # Ignore cleanup errors
+            
+            # Step 5: Save trajectory
+            trajectory_path = os.path.join(
+                self.output_dir,
+                f"traj_{task_name}.json"
+            )
+            trajectory_collector.save(trajectory_path)
+            print(f"✓ Trajectory saved to {trajectory_path}")
             
             # Step 6: Run evaluation in Docker container
             step_start = time.time()
             print(f"[TIMING] Step 6: Running Docker evaluation...")
-            # Skip Docker evaluation if we have precomputed data and want to speed things up
-            # For now, we'll still run Docker evaluation, but you can skip it if needed
             
             output_path = os.path.join(
                 self.output_dir,
