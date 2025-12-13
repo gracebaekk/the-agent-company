@@ -164,6 +164,74 @@ Use the following evaluation configuration:
     print("Agents terminated.")
 
 
+async def launch_remote_evaluation(green_url: str, white_url: str):
+    """Launch evaluation with remote agents (already running)."""
+    task_config = {
+        "task_names": [
+            "pm-create-channel-new-leader"
+        ],
+    }
+    
+    task_text = f"""
+Your task is to begin an assessment of the white agent located at:
+
+<white_agent_url>
+{white_url}/
+</white_agent_url>
+
+Use the following evaluation configuration:
+
+<evaluation_config>
+{json.dumps(task_config, indent=2)}
+</evaluation_config>
+    """
+    
+    print("Sending task description to green agent...")
+    print("Task description:")
+    print(task_text)
+    print("Sending...")
+    
+    try:
+        # 10 minute timeout - increased for complex tasks with Vision API
+        response = await send_message_to_agent(green_url, task_text, timeout=600.0)
+        
+        # Extract and print response
+        print("\n" + "=" * 60)
+        print("GREEN AGENT RESPONSE:")
+        print("=" * 60)
+        
+        # Extract response text
+        full_text = []
+        if hasattr(response, 'result') and hasattr(response.result, 'parts'):
+            for part in response.result.parts:
+                if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                    full_text.append(part.root.text)
+        
+        if not full_text:
+            # Fallback: convert response to string
+            full_text = [str(response)]
+        
+        complete_response = '\n'.join(full_text)
+        print(complete_response)
+        
+        # Save results to file (use absolute path to project root)
+        project_root = Path(__file__).parent.parent
+        output_file = project_root / 'evaluation_results.txt'
+        try:
+            with open(output_file, 'w') as f:
+                f.write(complete_response)
+            print(f"\n✓ Results saved to: {output_file}")
+        except Exception as save_error:
+            print(f"\n⚠️  Failed to save results to file: {save_error}")
+            print(f"Response text (first 500 chars): {complete_response[:500]}")
+        
+        print("\n✓ Evaluation request completed!")
+    except Exception as e:
+        print(f"❌ Error sending task: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 async def main():
     """Main entry point for launcher."""
     # For testing, use test_send_message
