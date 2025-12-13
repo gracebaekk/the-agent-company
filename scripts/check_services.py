@@ -12,10 +12,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 async def check_services(hostname: str = "localhost"):
     """Check if TAC services are accessible."""
     services = {
-        "GitLab": f"http://{hostname}:8091",
+        "GitLab": f"http://{hostname}:8929",
         "RocketChat": f"http://{hostname}:3000",
         "OwnCloud": f"http://{hostname}:8092",
-        "Plane": f"http://{hostname}:8091",  # Note: Plane and GitLab both use 8091, but Plane proxy handles routing
+        "Plane": f"http://{hostname}:8091",
     }
     
     print(f"Checking TAC services at hostname: {hostname}")

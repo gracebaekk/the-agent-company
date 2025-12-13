@@ -2,108 +2,103 @@
 
 ## Quick Start
 
-### 1. Install Dependencies
 ```bash
-pip install -e .
-```
+# Setup
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 
-### 2. Start Agents
+# Start services (wait 2-3 min)
+cd external/tac/servers && make start-api-server-with-setup
 
-**Terminal 1** (White Agent):
-```bash
-python main.py white
-```
+# Verify
+python ../../scripts/check_services.py
 
-**Terminal 2** (Green Agent):
-```bash
-python main.py green
-```
-
-### 3. Run Evaluation
-
-**Option A: Automated** (starts/stops agents automatically):
-```bash
+# Run evaluation
+export OPENAI_API_KEY="sk-proj-..."
 python main.py launch
 ```
 
-**Option B: Manual** (agents already running):
-Send evaluation request via A2A client or curl to `http://localhost:9001`
+Results in `evaluation_results.txt`.
 
-Results saved to `evaluation_results.txt`.
+## Select Tasks
 
-## Full Test with Docker
-
-### 1. Start TAC Services
-```bash
-cd external/tac/servers
-bash setup.sh
+Edit `src/launcher.py` line ~95-115:
+```python
+"task_names": [
+    "pm-send-hello-message",
+    "admin-arrange-meeting-rooms",
+]
 ```
 
-### 2. Set Environment Variables
+## Agent Beats (Ngrok)
+
 ```bash
-export SERVER_HOSTNAME=localhost
-export LITELLM_API_KEY=your_api_key
-export LITELLM_MODEL=openai/gpt-4o
-export DECRYPTION_KEY='theagentcompany is all you need'
-```
+# Start agents
+bash scripts/start_agents.sh tmux
 
-### 3. Run Evaluation
-```bash
-python main.py launch
-```
-
-## Precomputed Trajectories
-
-To get real scores without running the agent:
-
-1. **Add trajectory**:
-   ```bash
-   python scripts/utils/add_precomputed_trajectory.py <trajectory_file.json> --task-name <task_name>
-   ```
-
-2. **Run evaluation**: `python main.py launch`
-
-The evaluator automatically uses precomputed trajectories if available.
-
-## Manual Testing
-
-### Check Agents
-```bash
+# Check health
 curl http://localhost:9001/.well-known/agent-card.json
 curl http://localhost:9002/.well-known/agent-card.json
+
+# Expose
+bash scripts/start_ngrok.sh
+
+# Register ngrok URLs in Agent Beats
+
+# Stop
+tmux kill-session -t green_agent
+tmux kill-session -t white_agent
 ```
 
-### Send Manual Request
-```python
-import asyncio
-from src.utils.a2a_client import send_message_to_agent
+## Verify Services
 
-async def test():
-    message = """
-Your task is to begin an assessment of the white agent located at:
+```bash
+python scripts/check_services.py
 
-<white_agent_url>
-http://localhost:9002/
-</white_agent_url>
-
-Use the following evaluation configuration:
-
-<evaluation_config>
-{
-  "task_subset": "beginner",
-  "max_tasks": 1
-}
-</evaluation_config>
-"""
-    response = await send_message_to_agent("http://localhost:9001", message, timeout=900.0)
-    print(response)
-
-asyncio.run(test())
+# Individual checks
+curl http://localhost:2999      # API Server
+curl http://localhost:3000      # RocketChat
+curl http://localhost:8929      # GitLab
+curl http://localhost:8091      # Plane
+curl http://localhost:8092      # OwnCloud
 ```
 
-## Troubleshooting
+## Debug
 
-- **Port already in use**: `lsof -ti:9001 | xargs kill -9`
-- **Docker not found**: Install Docker or use mock mode
-- **Module not found**: `pip install -e .`
-- **Evaluation fails**: Check Docker, environment variables, TAC services
+```bash
+# Agent logs (tmux)
+tmux attach -t green_agent    # Ctrl+B then D to detach
+
+# Docker containers
+docker ps --filter "name=tac_eval"
+
+# Trajectories
+ls -lt /var/folders/*/T/tac_eval_*/traj_*.json | head -5
+cat <path> | python -m json.tool
+```
+
+## Common Issues
+
+| Problem | Fix |
+|---------|-----|
+| Agents not running | `bash scripts/start_agents.sh tmux` |
+| File not in container | Restart agents to reload Docker bridge |
+| API key error | `export OPENAI_API_KEY="..."` in same terminal |
+| Service down | `python scripts/check_services.py` then restart |
+| Port in use | `lsof -ti:PORT \| xargs kill -9` |
+
+## Restart Services
+
+```bash
+cd external/tac/servers
+make restart-rocketchat
+make restart-gitlab
+make restart-api-server
+```
+
+## Task Categories
+
+In `src/green_agent/evaluation/task_selector.py`:
+- **PM**: RocketChat, Plane, GitLab
+- **Admin**: Files, spreadsheets, PDFs
+- **HR, Finance, SDE**: Various workflows

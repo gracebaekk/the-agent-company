@@ -1,125 +1,95 @@
-# TAC Green Agent Implementation
+# TAC Agent Implementation
 
-A2A-compatible assessment agent that evaluates white agents using the TAC benchmark framework.
-
-## Overview
-
-The green agent:
-- Selects tasks from predefined subsets
-- Sends tasks to white agents via A2A protocol
-- Collects trajectories of agent actions
-- Runs Docker-based TAC evaluations
-- Aggregates and reports results
+A2A-compatible evaluation system for The Agent Company benchmark.
 
 ## Architecture
 
 ```
-Green Agent (A2A Server)
-  ├── TaskSelector → Selects tasks from TASK_SUBSETS
-  ├── TACEvaluator → Orchestrates evaluation
-  │   ├── DockerManager → Manages Docker containers
-  │   └── TrajectoryCollector → Tracks agent actions
-  └── White Agent (A2A) → Receives tasks, performs actions
+Green Agent (Evaluator) → Selects tasks, sends to White Agent, runs Docker evaluation
+White Agent (Target)    → Receives tasks, executes with Docker bridge for file access
 ```
 
-## Components
+## Key Features
 
-### 1. Green Agent (`src/green_agent/agent.py`)
-- Parses evaluation requests (white agent URL + config)
-- Selects tasks using `TaskSelector`
-- Runs evaluations using `TACEvaluator`
-- Formats and returns results
+### Docker Bridge
+White agent reads/writes files directly in task containers:
+- Detects paths: `/workspace/`, `/instruction/`, `/utils/`
+- Uses `docker exec` (read) and `docker cp` (write)
+- Filters out NPC containers
 
-**Request Format:**
+### Enhanced Tasks
+- **PM**: RocketChat, Plane, GitLab APIs with conditional logic
+- **Admin**: File operations in Docker containers
+- **Service Integration**: RocketChat (3000), GitLab (8929), Plane (8091), OwnCloud (8092)
+
+## Structure
+
 ```
-Your task is to begin an assessment of the white agent located at:
+src/
+├── green_agent/evaluation/    # Task selection, evaluation, scoring
+├── white_agent/agent.py       # Docker bridge + tool execution
+├── data/task_instructions.json
+└── launcher.py                # Auto-launch evaluation
 
-<white_agent_url>
-http://localhost:9002/
-</white_agent_url>
+scripts/
+├── start_agents.sh            # Start agents in tmux
+├── start_ngrok.sh             # Expose via ngrok
+└── check_services.py          # Verify services
 
-Use the following evaluation configuration:
-
-<evaluation_config>
-{
-  "task_subset": "intermediate",
-  "max_tasks": 3
-}
-</evaluation_config>
+external/tac/servers/          # API server + all services
 ```
-
-### 2. Task Selector (`src/green_agent/evaluation/task_selector.py`)
-Selects tasks from predefined subsets: `beginner`, `intermediate`, `advanced`, `coding_focused`, `communication_focused`, `multi_service`.
-
-### 3. Docker Manager (`src/utils/docker_manager.py`)
-Manages Docker containers: pulls images, extracts instructions, initializes tasks, runs evaluations.
-
-### 4. Trajectory Collector (`src/data/trajectory_collector.py`)
-Collects and saves agent interaction trajectories in TAC-compatible JSON format.
-
-### 5. TAC Evaluator (`src/green_agent/evaluation/evaluator.py`)
-Orchestrates evaluation: pulls Docker image → extracts task → sends to white agent → collects trajectory → runs Docker evaluation → returns results.
 
 ## Setup
 
-### Prerequisites
-- Docker installed and running
-- TAC services (GitLab, RocketChat, Plane, OwnCloud)
-- Python 3.12+ with dependencies: `pip install -e .`
-
-### Environment Variables
 ```bash
-SERVER_HOSTNAME=localhost
-LITELLM_API_KEY=your_api_key
-LITELLM_MODEL=openai/gpt-4o
-DECRYPTION_KEY='theagentcompany is all you need'
+# 1. Install
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Start services
+cd external/tac/servers
+make start-api-server-with-setup
+
+# 3. Verify (wait 2-3 min)
+python ../../scripts/check_services.py
 ```
 
 ## Usage
 
-1. **Start TAC Services**: `cd external/tac/servers && bash setup.sh`
-2. **Start White Agent**: `python main.py white`
-3. **Start Green Agent**: `python main.py green`
-4. **Run Evaluation**: `python main.py launch`
-
-Results saved to `evaluation_results.txt`.
-
-## File Structure
-
-```
-src/
-├── green_agent/
-│   ├── agent.py                 # Main executor
-│   └── evaluation/
-│       ├── evaluator.py         # Evaluation orchestrator
-│       ├── task_selector.py     # Task selection
-│       └── scoring.py           # Custom scoring (optional)
-├── white_agent/
-│   └── agent.py                 # White agent implementation
-├── utils/
-│   ├── a2a_client.py           # A2A client utilities
-│   └── docker_manager.py       # Docker management
-└── data/
-    ├── trajectory_collector.py  # Trajectory collection
-    └── trajectories/            # Precomputed trajectories
+### Local
+```bash
+export OPENAI_API_KEY="sk-proj-..."
+python main.py launch
 ```
 
-## Customization
+### Agent Beats
+```bash
+bash scripts/start_agents.sh tmux
+bash scripts/start_ngrok.sh
+# Use ngrok URLs in Agent Beats
+```
 
-**Task Selection**: Modify `TASK_SUBSETS` in `task_selector.py`
+## Task Selection
 
-**Scoring**: Implement custom strategies in `scoring.py` and integrate in `evaluator.py`
+Edit `src/launcher.py` line ~95:
+```python
+"task_names": ["pm-send-hello-message", "admin-arrange-meeting-rooms"]
+```
 
-## Testing
+## Environment
 
-**Automated**: `python main.py launch` (starts/stops agents automatically)
-
-**Manual**: Start agents separately, then send evaluation request via A2A client.
+```bash
+OPENAI_API_KEY=sk-proj-...
+SERVER_HOSTNAME=localhost
+LITELLM_MODEL=openai/gpt-4o
+DECRYPTION_KEY='theagentcompany is all you need'
+```
 
 ## Troubleshooting
 
-- **Docker not found**: Install Docker Desktop/Engine
-- **Cannot connect to Docker**: Start Docker daemon
-- **Network host not supported** (Mac/Windows): Enable host networking in Docker Desktop
-- **Services not accessible**: Check `SERVER_HOSTNAME` matches service location
-- **Evaluation fails**: Check environment variables, Docker logs, service health
+| Issue | Solution |
+|-------|----------|
+| Services down | `make start-api-server-with-setup` in `external/tac/servers` |
+| Files go to host | Restart agents to reload code |
+| API key error | Export in same terminal as `python main.py launch` |
+| Port conflict | `lsof -ti:PORT \| xargs kill -9` |

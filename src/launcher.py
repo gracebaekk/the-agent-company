@@ -93,7 +93,9 @@ async def launch_evaluation():
     # Send the task description to green agent
     print("Sending task description to green agent...")
     task_config = {
-        "task_names": ["pm-update-gitlab-issue-from-plane-status"],  # Run single task
+        "task_names": [
+            "pm-create-channel-new-leader"
+        ],
     }
     
     task_text = f"""

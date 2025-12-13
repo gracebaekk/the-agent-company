@@ -80,8 +80,40 @@ TOOLS = [
 
 
 def execute_bash(command: str) -> Dict[str, Any]:
-    """Execute a bash command and return the result."""
+    """Execute a bash command and return the result. Can run in container or on host."""
     try:
+        # Check if we should run this in a Docker container
+        # Commands that reference container-specific paths should run in container
+        run_in_container = any(path in command for path in ['/instruction/', '/workspace/', '/output/', '/utils/', '/npc/'])
+        
+        if run_in_container:
+            # Find the active task evaluation container
+            result = subprocess.run(
+                ["docker", "ps", "--filter", "name=tac_eval", "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                container_name = result.stdout.strip().split('\n')[0]
+                # Run command in container
+                docker_result = subprocess.run(
+                    ["docker", "exec", container_name, "bash", "-c", command],
+                    capture_output=True,
+                    text=True,
+                    timeout=120
+                )
+                
+                return {
+                    "success": True,
+                    "stdout": docker_result.stdout,
+                    "stderr": docker_result.stderr,
+                    "exit_code": docker_result.returncode,
+                    "container": container_name
+                }
+        
+        # Run on host
         # Replace the-agent-company.com with localhost for local execution
         command = command.replace("the-agent-company.com", "localhost")
         command = command.replace("http://localhost", "http://localhost")  # Ensure http not https
@@ -96,11 +128,6 @@ def execute_bash(command: str) -> Dict[str, Any]:
         # inside the command string. The LLM sometimes sends \' which should be '
         command = command.replace("\\'", "'")
         command = command.replace('\\"', '"')
-        
-        # Note: We previously tried to handle escaped newlines in python -c commands
-        # but it's complex because we need to distinguish between newlines in strings
-        # vs newlines as code structure. The shell handles this correctly, so just
-        # run the command as-is.
         
         result = subprocess.run(
             command,
@@ -119,7 +146,7 @@ def execute_bash(command: str) -> Dict[str, Any]:
     except subprocess.TimeoutExpired:
         return {
             "success": False,
-            "error": "Command timed out after 60 seconds"
+            "error": "Command timed out after 120 seconds"
         }
     except Exception as e:
         return {
@@ -129,18 +156,60 @@ def execute_bash(command: str) -> Dict[str, Any]:
 
 
 def read_file(file_path: str) -> Dict[str, Any]:
-    """Read a file and return its contents."""
+    """Read a file and return its contents. Supports both host and Docker container files."""
     try:
-        # Replace /workspace with /tmp/workspace for Mac compatibility (local dev only)
+        # First, try to read from host filesystem
         import platform
+        host_file_path = file_path
         if platform.system() == "Darwin":
-            file_path = file_path.replace("/workspace", "/tmp/workspace")
-        with open(file_path, 'r') as f:
-            content = f.read()
-        return {
-            "success": True,
-            "content": content
-        }
+            host_file_path = file_path.replace("/workspace", "/tmp/workspace")
+        
+        try:
+            with open(host_file_path, 'r') as f:
+                content = f.read()
+            return {
+                "success": True,
+                "content": content
+            }
+        except FileNotFoundError:
+            # If file not on host, try to read from Docker container
+            # Look for paths that are typically in containers
+            if file_path.startswith(('/instruction/', '/workspace/', '/output/', '/utils/', '/npc/')):
+                try:
+                    # Find the active task evaluation container (exclude NPC containers)
+                    result = subprocess.run(
+                        ["docker", "ps", "--filter", "name=tac_eval", "--format", "{{.Names}}"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    
+                    if result.returncode == 0 and result.stdout.strip():
+                        # Filter out NPC containers - get the most recent non-NPC container
+                        containers = [c for c in result.stdout.strip().split('\n') if 'tac_npc' not in c]
+                        if containers:
+                            container_name = containers[0]
+                            # Read file from container
+                            docker_result = subprocess.run(
+                                ["docker", "exec", container_name, "cat", file_path],
+                                capture_output=True,
+                                text=True,
+                                timeout=30
+                            )
+                            
+                            if docker_result.returncode == 0:
+                                return {
+                                    "success": True,
+                                    "content": docker_result.stdout,
+                                    "source": f"container:{container_name}"
+                                }
+                except Exception:
+                    # Docker bridge failed, continue to raise FileNotFoundError below
+                    pass
+            
+            # If we get here, file doesn't exist on host or in container
+            raise FileNotFoundError(f"File not found: {file_path}")
+                
     except Exception as e:
         return {
             "success": False,
@@ -149,23 +218,72 @@ def read_file(file_path: str) -> Dict[str, Any]:
 
 
 def write_file(file_path: str, content: str) -> Dict[str, Any]:
-    """Write content to a file."""
+    """Write content to a file. Supports both host and Docker container files."""
+    # Check if path looks like it's in a container
+    # For admin tasks, /workspace/ should go to container, not host
+    if file_path.startswith(('/instruction/', '/utils/', '/output/', '/workspace/')):
+        try:
+            # Find the active task evaluation container (exclude NPC containers)
+            result = subprocess.run(
+                ["docker", "ps", "--filter", "name=tac_eval", "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # Filter out NPC containers - get the most recent non-NPC container
+                containers = [c for c in result.stdout.strip().split('\n') if 'tac_npc' not in c]
+                if containers:
+                    container_name = containers[0]
+                    # Write file to container - create temp file and copy
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+                        tmp.write(content)
+                        tmp_path = tmp.name
+                    
+                    try:
+                        # Copy file into container
+                        docker_result = subprocess.run(
+                            ["docker", "cp", tmp_path, f"{container_name}:{file_path}"],
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                        
+                        if docker_result.returncode == 0:
+                            return {
+                                "success": True,
+                                "message": f"Successfully wrote to {file_path} in container {container_name}"
+                            }
+                        else:
+                            return {
+                                "success": False,
+                                "error": f"Failed to write to container: {docker_result.stderr}"
+                            }
+                    finally:
+                        os.unlink(tmp_path)
+        except Exception as e:
+            # Docker bridge failed, fall through to host write
+            pass
+    
+    # Write to host filesystem
     try:
-        # Replace /workspace with /tmp/workspace for Mac compatibility (local dev only)
         import platform
+        host_file_path = file_path
         if platform.system() == "Darwin":
-            file_path = file_path.replace("/workspace", "/tmp/workspace")
+            host_file_path = file_path.replace("/workspace", "/tmp/workspace")
             # ALSO replace /workspace in the content itself (for Python scripts, etc.)
             content = content.replace("/workspace", "/tmp/workspace")
         # Create directory if it doesn't exist
-        dir_path = os.path.dirname(file_path)
+        dir_path = os.path.dirname(host_file_path)
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)
-        with open(file_path, 'w') as f:
+        with open(host_file_path, 'w') as f:
             f.write(content)
         return {
             "success": True,
-            "message": f"Successfully wrote to {file_path}"
+            "message": f"Successfully wrote to {host_file_path}"
         }
     except Exception as e:
         return {
