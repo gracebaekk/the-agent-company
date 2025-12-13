@@ -9,15 +9,15 @@ import random
 # "hr-check-attendance-one-day",
 # "finance-qualified-bill-ask-for-reimburse"
 # pm-distribute-information
+# pm-change-channel-ownership
+# pm-add-new-moderator
+# pm-create-channel-new-leader
+# pm-update-sprint-cycles
 
 # pm-update-gitlab-issue-from-plane-status (1/3)
 # pm-update-plane-issue-from-gitlab-status (1/7)
-# pm-update-sprint-cycles (1/4)
-# pm-add-new-moderator (1/3)
-# pm-change-channel-ownership (1/3)
 # pm-check-backlog-update-issues (1/5)
 # pm-copy-plane-issues-to-gitlab (2/4)
-# pm-create-channel-new-leader (1/3)
 # pm-create-teammate-channel-from-spreadsheet (1/5)
 
 # All 175 TAC tasks organized by category

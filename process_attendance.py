@@ -25,3 +25,4 @@ report_df = perfect_attendance[['Name']]
 
 # Save the report to an Excel file
 report_df.to_excel('/tmp/workspace/2024-03-attendance-summary.xlsx', index=False)
+

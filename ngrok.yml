@@ -1,0 +1,12 @@
+version: "2"
+authtoken: 36lLghv7jeEwqCjZbxuR3YpsxUG_2rzuM7AQKQmQvi11WWRuW
+
+tunnels:
+  green-agent:
+    addr: 9001
+    proto: http
+    
+  white-agent:
+    addr: 9002
+    proto: http
+
