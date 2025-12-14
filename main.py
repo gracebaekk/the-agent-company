@@ -15,7 +15,6 @@ def green():
     """Start the green agent (assessment manager)."""
     start_green_agent()
 
-
 @app.command()
 def white():
     """Start the white agent (target being tested)."""
@@ -30,7 +29,12 @@ def run():
     if role == "white":
         start_white_agent(port=port if port > 0 else None)
     else:
-        start_green_agent(port=port if port > 0 else None)
+        # Check if running via agentbeats (agentbeats sets AGENT_URL with /to_agent/ path)
+        # When using agentbeats, don't add info routes as agentbeats handles routing
+        is_agentbeats = os.getenv("AGENT_URL", "").startswith("http") and "/to_agent/" in os.getenv("AGENT_URL", "")
+        # Only add info routes when NOT using agentbeats (standalone mode)
+        add_info_route = not is_agentbeats
+        start_green_agent(port=port if port > 0 else None, add_info_route=add_info_route)
 
 
 @app.command()

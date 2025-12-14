@@ -1,0 +1,52 @@
+{
+  "time_handling": {
+    "description": "When comparing times in CSV data, ALWAYS convert to minutes or datetime objects",
+    "warning": "DO NOT compare time strings directly like '17:30' >= '17:28' - this gives wrong results!",
+    "correct_approach": "hour, minute = time_str.strip().split(':'); total_minutes = int(hour) * 60 + int(minute); Then compare: total_minutes >= 17*60+30 (for 17:30)"
+  },
+  "csv_handling": {
+    "description": "CSV files often have whitespace in column names and values",
+    "required_steps": [
+      "df = pd.read_csv('file.csv')",
+      "df.columns = df.columns.str.strip()  # Remove whitespace from column names",
+      "df = df.apply(lambda x: x.str.strip() if x.dtype == 'object' else x)  # Strip string values"
+    ]
+  },
+  "file_extraction": {
+    "pdf": "pip install pdfplumber && python -c \"import pdfplumber; print(pdfplumber.open('policy.pdf').pages[0].extract_text())\"",
+    "image": {
+      "description": "Extract text from images using OpenAI Vision API",
+      "script": "cat > read_image.py << 'EOF'\nimport base64\nfrom openai import OpenAI\nb64 = base64.b64encode(open('receipt.jpg','rb').read()).decode()\nr = OpenAI().chat.completions.create(model='gpt-4o', messages=[{'role':'user','content':[{'type':'text','text':'Extract all text from this receipt'},{'type':'image_url','image_url':{'url':f'data:image/jpeg;base64,{b64}'}}]}])\nprint(r.choices[0].message.content)\nEOF\npython read_image.py"
+    }
+  },
+  "reimbursement_calculations": {
+    "description": "Rules for calculating reimbursable amounts from receipts",
+    "rules": [
+      "The full subtotal amount IS reimbursable (no per-person limit applies)",
+      "Tips: max 20% of the subtotal is reimbursable",
+      "If actual tip exceeds 20%, only reimburse 20% of subtotal",
+      "Total reimbursable = subtotal + min(actual_tip, subtotal * 0.20)"
+    ],
+    "example": {
+      "subtotal": 179.19,
+      "actual_tip": 44.80,
+      "tip_percentage": "25%",
+      "calculation": {
+        "max_tip_allowed": "subtotal * 0.20 = $179.19 * 0.20 = $35.84",
+        "total_reimbursable": "$179.19 + $35.84 = $215.03 ≈ $215"
+      },
+      "note": "State the EXACT dollar amount in your message, e.g., '$215'"
+    }
+  },
+  "excel_creation": {
+    "description": "For creating Excel files, use Python with openpyxl",
+    "example": "pip install openpyxl pandas && python -c \"import pandas as pd; df = pd.DataFrame({'Name': ['Alice', 'Bob']}); df.to_excel('/workspace/output.xlsx', index=False)\""
+  },
+  "general_error_handling": {
+    "already_exists_or_has_role": "SUCCESS, continue",
+    "not_found": "Create/initialize the resource first",
+    "real_error": "Try an alternative approach",
+    "always_check_responses": "Extract IDs (userId, roomId, authToken) from JSON responses before using in next steps"
+  }
+}
+

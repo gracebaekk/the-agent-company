@@ -5,6 +5,7 @@ import json
 import subprocess
 import asyncio
 from typing import List, Dict, Any
+from pathlib import Path
 import uvicorn
 from dotenv import load_dotenv
 from a2a.server.apps import A2AStarletteApplication
@@ -17,6 +18,93 @@ from a2a.utils import new_agent_text_message
 from litellm import completion
 
 load_dotenv()
+
+
+def load_config_files() -> Dict[str, Any]:
+    """Load configuration files (credentials, API reference, domain rules)."""
+    data_dir = Path(__file__).parent.parent / "data"
+    config = {}
+    
+    try:
+        with open(data_dir / "service_credentials.json") as f:
+            config["credentials"] = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load service_credentials.json: {e}")
+        config["credentials"] = {}
+    
+    try:
+        with open(data_dir / "api_reference.json") as f:
+            config["api_reference"] = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load api_reference.json: {e}")
+        config["api_reference"] = {}
+    
+    try:
+        with open(data_dir / "domain_rules.json") as f:
+            config["domain_rules"] = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load domain_rules.json: {e}")
+        config["domain_rules"] = {}
+    
+    return config
+
+
+def format_config_for_system_message(config: Dict[str, Any]) -> str:
+    """Format configuration data into a concise system message section."""
+    creds = config.get("credentials", {})
+    api_ref = config.get("api_reference", {})
+    rules = config.get("domain_rules", {})
+    
+    sections = []
+    
+    # Service credentials
+    if creds:
+        sections.append("SERVICE CREDENTIALS:")
+        if "owncloud" in creds:
+            oc = creds["owncloud"]
+            sections.append(f"- ownCloud ({oc['url']}): Username: {oc['username']}, Password: {oc['password']}")
+        if "gitlab" in creds:
+            gl = creds["gitlab"]
+            sections.append(f"- GitLab ({gl['url']}): Username: {gl['username']}, API Token: {gl['api_token']}")
+        if "rocketchat" in creds:
+            rc = creds["rocketchat"]
+            sections.append(f"- RocketChat ({rc['url']}): Username: {rc['username']}, Password: {rc['password']}")
+        if "plane" in creds:
+            pl = creds["plane"]
+            sections.append(f"- Plane ({pl['url']}): API Key: {pl['api_key']}, Workspace: {pl['workspace']}")
+        sections.append("")
+    
+    # Critical API notes
+    if "rocketchat" in api_ref:
+        rc_ref = api_ref["rocketchat"]
+        sections.append("ROCKETCHAT CRITICAL:")
+        if "critical_notes" in rc_ref:
+            for note in rc_ref["critical_notes"]:
+                sections.append(f"- {note}")
+        sections.append("")
+    
+    # Error handling
+    if "rocketchat" in api_ref and "error_handling" in api_ref["rocketchat"]:
+        sections.append("ERROR HANDLING:")
+        for key, value in api_ref["rocketchat"]["error_handling"].items():
+            sections.append(f"- {key.replace('_', ' ').title()}: {value}")
+        sections.append("")
+    
+    # Domain rules summary
+    if rules:
+        if "time_handling" in rules:
+            sections.append("TIME HANDLING: " + rules["time_handling"]["description"])
+        if "csv_handling" in rules:
+            sections.append("CSV HANDLING: " + rules["csv_handling"]["description"])
+        if "reimbursement_calculations" in rules:
+            reimb = rules["reimbursement_calculations"]
+            sections.append("REIMBURSEMENT: " + "; ".join(reimb["rules"][:2]))
+        sections.append("")
+    
+    # Reference to full documentation
+    sections.append("For detailed API examples and commands, refer to the JSON files in /workspace if available, or use the patterns above.")
+    
+    return "\n".join(sections)
 
 
 # Tool definitions for function calling
@@ -334,6 +422,7 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
     def __init__(self, max_iterations: int = 30):
         self.ctx_id_to_messages = {}
         self.max_iterations = max_iterations
+        self.config = load_config_files()
     
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Execute the agent's task fulfillment logic with tool calling."""
@@ -347,6 +436,7 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
         
         # Add system message on first interaction
         if len(messages) == 0:
+            config_text = format_config_for_system_message(self.config)
             system_message = {
                 "role": "system",
                 "content": (
@@ -367,175 +457,12 @@ class GeneralWhiteAgentExecutor(AgentExecutor):
                     "- execute_bash: Run ANY bash command (curl, git, python, pip install, etc.)\n"
                     "- read_file: Read file contents\n"
                     "- write_file: Write content to files\n\n"
-                    "SERVICE CREDENTIALS (IMPORTANT!):\n"
-                    "- ownCloud (http://localhost:8092): Username: theagentcompany, Password: theagentcompany\n"
-                    "  - Download files via WebDAV (EXACT syntax): curl -u theagentcompany:theagentcompany -o output.jpg 'http://localhost:8092/remote.php/webdav/Documents/Financials/receipt.jpg'\n"
-                    "  - Download PDF: curl -u theagentcompany:theagentcompany -o policy.pdf 'http://localhost:8092/remote.php/webdav/Documents/Administrative%20Specialist/Reimbursement%20Policy.pdf'\n"
-                    "  - NOTE: URL-encode spaces as %20 in paths. The path starts DIRECTLY with the folder name (e.g., Documents/...)\n"
-                    "- GitLab (http://localhost:8929): Username: root, Password: theagentcompany\n"
-                    "  - API Token: root-token (use -H 'PRIVATE-TOKEN: root-token' for ALL API requests)\n"
-                    "  - Create repo: curl -X POST -H 'PRIVATE-TOKEN: root-token' -H 'Content-Type: application/json' -d '{\"name\":\"New Storage Project\",\"path\":\"new-storage-project\",\"visibility\":\"public\"}' http://localhost:8929/api/v4/projects\n"
-                    "  - Create issue: curl -X POST -H 'PRIVATE-TOKEN: root-token' -H 'Content-Type: application/json' -d '{\"title\":\"Issue Title\",\"description\":\"Issue description\"}' 'http://localhost:8929/api/v4/projects/root%2Fproject-name/issues'\n"
-                    "  - Search issues: curl -H 'PRIVATE-TOKEN: root-token' 'http://localhost:8929/api/v4/projects/root%2Fopenhands/issues?search=TITLE&state=all'\n"
-                    "  - Get issue: curl -H 'PRIVATE-TOKEN: root-token' 'http://localhost:8929/api/v4/projects/root%2Fopenhands/issues/IID'\n"
-                    "  - Close issue: curl -X PUT -H 'PRIVATE-TOKEN: root-token' -H 'Content-Type: application/json' -d '{\"state_event\":\"close\"}' 'http://localhost:8929/api/v4/projects/root%2Fopenhands/issues/IID'\n"
-                    "  - Reopen issue: curl -X PUT -H 'PRIVATE-TOKEN: root-token' -H 'Content-Type: application/json' -d '{\"state_event\":\"reopen\"}' 'http://localhost:8929/api/v4/projects/root%2Fopenhands/issues/IID'\n"
-                    "  - Create/update file: curl -X POST -H 'PRIVATE-TOKEN: root-token' -H 'Content-Type: application/json' -d '{\"branch\":\"main\",\"content\":\"...\",\"commit_message\":\"...\"}' 'http://localhost:8929/api/v4/projects/root%2Fnew-storage-project/repository/files/README.md'\n"
-
-                    "- RocketChat (http://localhost:3000): Login via API first to get tokens\n"
-                    "  ROCKETCHAT API CRITICAL: ALL POST requests MUST include -H 'Content-Type: application/json'\n"
-                    "  - Login: curl -X POST -H 'Content-Type: application/json' -d '{\"user\":\"theagentcompany\",\"password\":\"theagentcompany\"}' http://localhost:3000/api/v1/login\n"
-                    "  - For emojis, use the TEXT CODE like :kissing_smiling_eyes: NOT the unicode emoji 😘\n"
-                    "  - To NOTIFY ACTIVE USERS in a room, include @here in your message text\n"
-                    "  - Example message with emoji and notification: \"Hi :kissing_smiling_eyes: @here\"\n"
-                    "  - Create DM room with user: curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"username\":\"zhang_wei\"}' http://localhost:3000/api/v1/im.create\n"
-                    "  - Send message to DM: curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"channel\":\"@zhang_wei\",\"text\":\"Hello!\"}' http://localhost:3000/api/v1/chat.postMessage\n"
-                    "  - CONVERSATIONS WITH NPCS: After sending a DM, wait (sleep 5) then retrieve the response!\n"
-                    "  - Get DM messages: curl -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/im.messages?roomId=ROOMID'\n"
-                    "  - The ROOMID is returned from im.create as room._id\n"
-                    "  - NPCs will respond with important info - you MUST read their responses and use that info in your work!\n"
-                    "  - ROCKETCHAT CHANNEL MANAGEMENT (CRITICAL - FOLLOW EXACT STEPS):\n"
-                    "    LOGIN:\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -d '{\"user\":\"theagentcompany\",\"password\":\"theagentcompany\"}' http://localhost:3000/api/v1/login\n"
-                    "      Extract: authToken and userId from response\n"
-                    "    \n"
-                    "    GET USER ID BY USERNAME:\n"
-                    "      curl -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/users.info?username=USERNAME'\n"
-                    "      Extract: user._id from response\n"
-                    "      If user not found, they might not exist yet - try creating them with users.create API\n"
-                    "    \n"
-                    "    CREATE USER (if needed, requires admin privileges):\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "        -d '{\"name\":\"User Name\",\"email\":\"user@example.com\",\"password\":\"theagentcompany\",\"username\":\"username\",\"active\":true,\"roles\":[\"user\"],\"joinDefaultChannels\":false}' \\\n"
-                    "        http://localhost:3000/api/v1/users.create\n"
-                    "    \n"
-                    "    PATTERN: Check if user exists, create if not:\n"
-                    "      # Try to get user info\n"
-                    "      RESPONSE=$(curl -s -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/users.info?username=liu_qiang')\n"
-                    "      # Check if user exists by looking for success field\n"
-                    "      if echo \"$RESPONSE\" | grep -q '\"success\":false'; then\n"
-                    "        # User doesn't exist, create them\n"
-                    "        curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "          -d '{\"name\":\"Liu Qiang\",\"email\":\"liu_qiang@example.com\",\"password\":\"theagentcompany\",\"username\":\"liu_qiang\",\"active\":true,\"roles\":[\"user\"],\"joinDefaultChannels\":false}' \\\n"
-                    "          http://localhost:3000/api/v1/users.create\n"
-                    "      fi\n"
-                    "      # Now get user ID (works whether user existed or was just created)\n"
-                    "      USER_ID=$(curl -s -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/users.info?username=liu_qiang' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"user\"][\"_id\"])')\n"
-
-                    "    \n"
-                    "    GET CHANNEL INFO:\n"
-                    "      curl -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/channels.info?roomName=CHANNEL_NAME'\n"
-                    "      Extract: channel._id from response\n"
-                    "    \n"
-                    "    INVITE USER TO CHANNEL:\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "        -d '{\"roomId\":\"CHANNEL_ID\",\"userId\":\"USER_ID_TO_INVITE\"}' \\\n"
-                    "        http://localhost:3000/api/v1/channels.invite\n"
-                    "    \n"
-                    "    MAKE USER MODERATOR:\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "        -d '{\"roomId\":\"CHANNEL_ID\",\"userId\":\"USER_ID_TO_MODERATE\"}' \\\n"
-                    "        http://localhost:3000/api/v1/channels.addModerator\n"
-                    "    \n"
-                    "    MAKE USER LEADER (use roles API, not channels API):\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "        -d '{\"roleName\":\"leader\",\"username\":\"USERNAME\",\"roomId\":\"CHANNEL_ID\"}' \\\n"
-                    "        http://localhost:3000/api/v1/roles.addUserToRole\n"
-                    "      Note: User must be invited to channel BEFORE adding leader role\n"
-
-                    "    \n"
-                    "    CREATE CHANNEL:\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "        -d '{\"name\":\"channel-name\"}' \\\n"
-                    "        http://localhost:3000/api/v1/channels.create\n"
-                    "      Extract: channel._id from response\n"
-                    "    \n"
-                    "    JOIN CHANNEL (for yourself):\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "        -d '{\"roomId\":\"CHANNEL_ID\"}' \\\n"
-                    "        http://localhost:3000/api/v1/channels.join\n"
-                    "    \n"
-                    "    ADD USER AS OWNER:\n"
-                    "      curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' \\\n"
-                    "        -d '{\"roomId\":\"CHANNEL_ID\",\"userId\":\"USER_ID_TO_OWN\"}' \\\n"
-                    "        http://localhost:3000/api/v1/channels.addOwner\n"
-                    "    \n"
-                    "    ERROR HANDLING (CRITICAL - READ CAREFULLY):\n"
-                    "    - If user creation fails with \"username already exists\" → Get existing user ID and continue\n"
-                    "    - If invite fails with \"user already in room\" → Continue to next step\n"
-                    "    - If addModerator/addOwner fails with \"user already has role\" → Task is complete, you succeeded!\n"
-                    "    - If user.info returns \"User not found\" → You MUST create the user first\n"
-                    "    - Always check API responses and extract IDs (userId, roomId, authToken) from JSON\n"
-                    "    - Parse JSON responses with: python3 -c \"import sys,json; data=json.load(sys.stdin); print(data['user']['_id'])\"\n"
-                    "    \n"
-                    "    IMPORTANT NOTES:\n"
-                    "    - User MUST be a member of the channel before being made moderator/owner\n"
-                    "    - Always visit /home and /channel/CHANNEL_NAME URLs for trajectory tracking\n"
-                    "    - Use curl to visit URLs: curl 'http://localhost:3000/home' and curl 'http://localhost:3000/channel/CHANNEL_NAME'\n"
-                    "    - Extract values from JSON: pipe curl output to python3 -c for parsing\n"
-
-
-                    "- Plane (http://localhost:8091): Project management tool\n"
-                    "  - API Key: plane_api_83f868352c6f490aba59b869ffdae1cf (use -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf')\n"
-                    "  - WORKSPACE: tac\n"
-                    "  - Get project ID:\n"
-                    "    curl -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf' 'http://localhost:8091/api/v1/workspaces/tac/projects/'\n"
-                    "    Parse: python3 -c \"import json; print([p['id'] for p in json.loads(input())['results'] if p['name']=='PROJECT_NAME'][0])\"\n"
-                    "  - Get cycles (sprints):\n"
-                    "    curl -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/cycles/'\n"
-                    "    Parse: python3 -c \"import json; data=json.loads(input()); [print(f\\\"{c['name']}: {c['id']}\\\") for c in data['results']]\"\n"
-                    "  - Get issues in a cycle:\n"
-                    "    curl -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/cycles/CYCLE_ID/cycle-issues/'\n"
-                    "  - Get all issues in project:\n"
-                    "    curl -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/issues/'\n"
-                    "  - Get states: curl -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/states/'\n"
-                    "  - Update issue state: curl -X PATCH -H 'Content-Type: application/json' -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf' -d '{\"state\":\"STATE_ID\"}' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/issues/ISSUE_ID/'\n"
-                    "  - Update issue cycle: curl -X PATCH -H 'Content-Type: application/json' -H 'x-api-key: plane_api_83f868352c6f490aba59b869ffdae1cf' -d '{\"cycle\":\"CYCLE_ID\"}' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/issues/ISSUE_ID/'\n"
-                    "  - NOTE: Plane URLs in trajectory help with tracking. Visit URLs like: http://localhost:8091/tac/projects/PROJECT_ID/issues\n\n"
-                    "TIME HANDLING (IMPORTANT!):\n"
-                    "When comparing times in CSV data, ALWAYS convert to minutes or datetime objects. "
-                    "DO NOT compare time strings directly like '17:30' >= '17:28' - this gives wrong results!\n"
-                    "Correct approach:\n"
-                    "  hour, minute = time_str.strip().split(':')\n"
-                    "  total_minutes = int(hour) * 60 + int(minute)\n"
-                    "Then compare: total_minutes >= 17*60+30 (for 17:30)\n\n"
-                    "CSV HANDLING (IMPORTANT!):\n"
-                    "CSV files often have whitespace in column names and values. ALWAYS strip them:\n"
-                    "  df = pd.read_csv('file.csv')\n"
-                    "  df.columns = df.columns.str.strip()  # Remove whitespace from column names\n"
-                    "  df = df.apply(lambda x: x.str.strip() if x.dtype == 'object' else x)  # Strip string values\n\n"
-                    "OWNCLOUD FILE ACCESS (CRITICAL - DO BOTH STEPS!):\n"
-                    "Step 1: FIRST browse to the folder (required for tracking):\n"
-                    "  curl -u theagentcompany:theagentcompany 'http://localhost:8092/index.php/apps/files/?dir=/Documents/Financials'\n"
-                    "  curl -u theagentcompany:theagentcompany 'http://localhost:8092/index.php/apps/files/?dir=/Documents/Administrative%20Specialist'\n"
-                    "Step 2: THEN download the file via WebDAV:\n"
-                    "  curl -u theagentcompany:theagentcompany -o receipt.jpg 'http://localhost:8092/remote.php/webdav/Documents/Financials/receipt.jpg'\n"
-                    "  curl -u theagentcompany:theagentcompany -o policy.pdf 'http://localhost:8092/remote.php/webdav/Documents/Administrative%20Specialist/Reimbursement%20Policy.pdf'\n"
-                    "NOTE: URL-encode spaces as %20.\n\n"
-                    "EXTRACTING TEXT FROM FILES:\n"
-                    "- For PDF files: pip install pdfplumber && python -c \"import pdfplumber; print(pdfplumber.open('policy.pdf').pages[0].extract_text())\"\n"
-                    "- For images: Write and run a script file:\n"
-                    "  cat > read_image.py << 'EOF'\n"
-                    "import base64\n"
-                    "from openai import OpenAI\n"
-                    "b64 = base64.b64encode(open('receipt.jpg','rb').read()).decode()\n"
-                    "r = OpenAI().chat.completions.create(model='gpt-4o', messages=[{'role':'user','content':[{'type':'text','text':'Extract all text from this receipt'},{'type':'image_url','image_url':{'url':f'data:image/jpeg;base64,{b64}'}}]}])\n"
-                    "print(r.choices[0].message.content)\n"
-                    "EOF\n"
-                    "python read_image.py\n\n"
-                    "REIMBURSEMENT CALCULATIONS (CRITICAL!):\n"
-                    "When calculating reimbursable amounts from receipts:\n"
-                    "1. The full subtotal amount IS reimbursable (no per-person limit applies)\n"
-                    "2. Tips: max 20% of the subtotal is reimbursable\n"
-                    "3. If actual tip exceeds 20%, only reimburse 20% of subtotal\n"
-                    "4. Total reimbursable = subtotal + min(actual_tip, subtotal * 0.20)\n"
-                    "5. Example: subtotal=$179.19, actual_tip=$44.80 (which is 25%):\n"
-                    "   - Max tip allowed = $179.19 * 0.20 = $35.84\n"
-                    "   - Total reimbursable = $179.19 + $35.84 = $215.03 ≈ $215\n"
-                    "6. State the EXACT dollar amount in your message, e.g., '$215'\n\n"
-                    "For creating Excel files, use Python with openpyxl:\n"
-                    "  pip install openpyxl pandas\n"
-                    "  python -c \"import pandas as pd; df = pd.DataFrame({'Name': ['Alice', 'Bob']}); df.to_excel('/workspace/output.xlsx', index=False)\"\n\n"
+                    f"{config_text}\n"
+                    "For detailed API examples, commands, and domain-specific rules, you can read the JSON files:\n"
+                    "- /workspace/service_credentials.json (if available in task container)\n"
+                    "- /workspace/api_reference.json (if available in task container)\n"
+                    "- /workspace/domain_rules.json (if available in task container)\n"
+                    "Or use read_file tool to access: src/data/service_credentials.json, src/data/api_reference.json, src/data/domain_rules.json\n\n"
                     "REMEMBER: Execute ALL steps of the task. Do not stop until everything is done!"
                 )
             }

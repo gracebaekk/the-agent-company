@@ -2,7 +2,6 @@
 
 import os
 import json
-import re
 import asyncio
 import time
 from typing import Dict, List, Optional, Any
@@ -410,42 +409,4 @@ class TACEvaluator:
         }
 
 
-def parse_evaluation_request(message: str) -> Dict[str, Any]:
-    """
-    Parse evaluation request from message.
-    
-    Expected format:
-    Your task is to begin an assessment of the white agent located at:
-    
-    <white_agent_url>
-    http://localhost:9002/
-    </white_agent_url>
-    
-    Use the following evaluation configuration:
-    
-    <evaluation_config>
-    {
-      "task_subset": "intermediate",
-      "max_tasks": 3,
-      ...
-    }
-    </evaluation_config>
-    """
-    # Extract white agent URL
-    url_match = re.search(r'<white_agent_url>\s*(.*?)\s*</white_agent_url>', message, re.DOTALL)
-    white_agent_url = url_match.group(1).strip() if url_match else None
-    
-    # Extract evaluation config
-    config_match = re.search(r'<evaluation_config>\s*(.*?)\s*</evaluation_config>', message, re.DOTALL)
-    config_str = config_match.group(1).strip() if config_match else "{}"
-    
-    try:
-        config = json.loads(config_str)
-    except json.JSONDecodeError:
-        config = {}
-    
-    return {
-        "white_agent_url": white_agent_url,
-        "config": config,
-    }
 

@@ -95,17 +95,16 @@ async def launch_evaluation():
     task_config = {
         "task_names": [
             "pm-create-channel-new-leader"
-        ],
+        ]
     }
     
-    task_text = f"""
-Your task is to begin an assessment of the white agent located at:
+    task_text = f"""Your task is to begin an assessment of the white agent located at:
 
 <white_agent_url>
-{white_url}/
+{white_url}
 </white_agent_url>
 
-Use the following evaluation configuration:
+You should use the following evaluation configuration:
 
 <evaluation_config>
 {json.dumps(task_config, indent=2)}
@@ -168,18 +167,18 @@ async def launch_remote_evaluation(green_url: str, white_url: str):
     """Launch evaluation with remote agents (already running)."""
     task_config = {
         "task_names": [
+            "pm-send-hello-message", 
             "pm-create-channel-new-leader"
-        ],
+        ]
     }
     
-    task_text = f"""
-Your task is to begin an assessment of the white agent located at:
+    task_text = f"""Your task is to begin an assessment of the white agent located at:
 
 <white_agent_url>
-{white_url}/
+{white_url}
 </white_agent_url>
 
-Use the following evaluation configuration:
+You should use the following evaluation configuration:
 
 <evaluation_config>
 {json.dumps(task_config, indent=2)}
@@ -189,6 +188,7 @@ Use the following evaluation configuration:
     print("Sending task description to green agent...")
     print("Task description:")
     print(task_text)
+    print(f"Message length: {len(task_text)} characters")
     print("Sending...")
     
     try:

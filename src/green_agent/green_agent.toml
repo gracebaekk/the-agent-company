@@ -15,6 +15,13 @@ id = "host_assess_the_agent_company"
 name = "TheAgentCompany assessment hosting"
 description = """
 Assess the tool-calling ability of a white agent using TheAgentCompany framework.
+
+REQUIRED: The evaluation request MUST include task names in one of these formats:
+1. <evaluation_config>{"task_names": ["task1", "task2"]}</evaluation_config>
+2. Task names: task1, task2
+3. Evaluate on the following tasks: task1, task2
+
+Without task names, the agent will use default tasks.
 """
 tags = ["green agent", "assessment hosting", "the-agent-company"]
 
@@ -25,16 +32,14 @@ Your task is to begin an assessment of the white agent located at:
 http://localhost:9002/
 </white_agent_url>
 
-Use the following evaluation configuration:
+You should use the following evaluation configuration:
 
 <evaluation_config>
 {
-  "agent_strategy": "tool-calling",
-  "agent_model": "gpt-4o",
-  "agent_provider": "openai",
-  "user_strategy": "react",
-  "user_model": "gpt-4o",
-  "user_provider": "openai"
+  "task_names": [
+    "pm-send-hello-message",
+    "pm-create-channel-new-leader"
+  ]
 }
 </evaluation_config>
 """]

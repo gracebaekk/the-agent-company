@@ -1,6 +1,6 @@
 """Evaluation modules for green agent."""
 
-from .evaluator import TACEvaluator, parse_evaluation_request
+from .evaluator import TACEvaluator
 from ...utils.docker_manager import DockerManager
 from ...data.trajectory_collector import A2ATrajectoryCollector
 from .task_selector import TaskSelector, parse_task_config, TASK_SUBSETS, get_task_image_name
@@ -15,7 +15,6 @@ try:
     )
     __all__ = [
         "TACEvaluator",
-        "parse_evaluation_request",
         "DockerManager",
         "A2ATrajectoryCollector",
         "TaskSelector",
@@ -31,7 +30,6 @@ except ImportError:
     # Scoring functions not available (TAC framework not found)
     __all__ = [
         "TACEvaluator",
-        "parse_evaluation_request",
         "DockerManager",
         "A2ATrajectoryCollector",
         "TaskSelector",

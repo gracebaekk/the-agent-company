@@ -1,0 +1,88 @@
+{
+  "owncloud": {
+    "description": "File storage service accessed via WebDAV",
+    "authentication": "Basic auth with username:password",
+    "examples": {
+      "browse_folder": "curl -u USERNAME:PASSWORD 'http://localhost:8092/index.php/apps/files/?dir=/Documents/FOLDER'",
+      "download_file": "curl -u USERNAME:PASSWORD -o output.jpg 'http://localhost:8092/remote.php/webdav/Documents/Financials/receipt.jpg'",
+      "download_pdf": "curl -u USERNAME:PASSWORD -o policy.pdf 'http://localhost:8092/remote.php/webdav/Documents/Administrative%20Specialist/Reimbursement%20Policy.pdf'"
+    },
+    "notes": [
+      "URL-encode spaces as %20 in paths",
+      "Path starts DIRECTLY with folder name (e.g., Documents/...)",
+      "ALWAYS browse folder first (for tracking), then download file"
+    ]
+  },
+  "gitlab": {
+    "description": "Git repository and issue management",
+    "authentication": "PRIVATE-TOKEN header",
+    "examples": {
+      "create_repo": "curl -X POST -H 'PRIVATE-TOKEN: TOKEN' -H 'Content-Type: application/json' -d '{\"name\":\"Project\",\"path\":\"project\",\"visibility\":\"public\"}' http://localhost:8929/api/v4/projects",
+      "create_issue": "curl -X POST -H 'PRIVATE-TOKEN: TOKEN' -H 'Content-Type: application/json' -d '{\"title\":\"Title\",\"description\":\"Description\"}' 'http://localhost:8929/api/v4/projects/root%2Fproject/issues'",
+      "search_issues": "curl -H 'PRIVATE-TOKEN: TOKEN' 'http://localhost:8929/api/v4/projects/root%2Fproject/issues?search=TERM&state=all'",
+      "get_issue": "curl -H 'PRIVATE-TOKEN: TOKEN' 'http://localhost:8929/api/v4/projects/root%2Fproject/issues/IID'",
+      "close_issue": "curl -X PUT -H 'PRIVATE-TOKEN: TOKEN' -H 'Content-Type: application/json' -d '{\"state_event\":\"close\"}' 'http://localhost:8929/api/v4/projects/root%2Fproject/issues/IID'",
+      "reopen_issue": "curl -X PUT -H 'PRIVATE-TOKEN: TOKEN' -H 'Content-Type: application/json' -d '{\"state_event\":\"reopen\"}' 'http://localhost:8929/api/v4/projects/root%2Fproject/issues/IID'",
+      "create_file": "curl -X POST -H 'PRIVATE-TOKEN: TOKEN' -H 'Content-Type: application/json' -d '{\"branch\":\"main\",\"content\":\"...\",\"commit_message\":\"...\"}' 'http://localhost:8929/api/v4/projects/root%2Fproject/repository/files/PATH'"
+    }
+  },
+  "rocketchat": {
+    "description": "Team communication and channel management",
+    "authentication": "Login API returns authToken and userId (use X-Auth-Token and X-User-Id headers)",
+    "critical_notes": [
+      "ALL POST requests MUST include -H 'Content-Type: application/json'",
+      "For emojis, use TEXT CODE like :kissing_smiling_eyes: NOT unicode emoji",
+      "To notify active users, include @here in message text",
+      "After sending DM to NPC, wait (sleep 5) then retrieve response",
+      "User MUST be member of channel before being made moderator/owner",
+      "Always visit /home and /channel/CHANNEL_NAME URLs for trajectory tracking"
+    ],
+    "examples": {
+      "login": "curl -X POST -H 'Content-Type: application/json' -d '{\"user\":\"USERNAME\",\"password\":\"PASSWORD\"}' http://localhost:3000/api/v1/login",
+      "get_user_info": "curl -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/users.info?username=USERNAME'",
+      "create_user": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"name\":\"Name\",\"email\":\"email@example.com\",\"password\":\"password\",\"username\":\"username\",\"active\":true,\"roles\":[\"user\"],\"joinDefaultChannels\":false}' http://localhost:3000/api/v1/users.create",
+      "get_channel_info": "curl -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/channels.info?roomName=CHANNEL_NAME'",
+      "create_channel": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"name\":\"channel-name\"}' http://localhost:3000/api/v1/channels.create",
+      "invite_user": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"roomId\":\"CHANNEL_ID\",\"userId\":\"USER_ID\"}' http://localhost:3000/api/v1/channels.invite",
+      "add_moderator": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"roomId\":\"CHANNEL_ID\",\"userId\":\"USER_ID\"}' http://localhost:3000/api/v1/channels.addModerator",
+      "add_owner": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"roomId\":\"CHANNEL_ID\",\"userId\":\"USER_ID\"}' http://localhost:3000/api/v1/channels.addOwner",
+      "add_leader": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"roleName\":\"leader\",\"username\":\"USERNAME\",\"roomId\":\"CHANNEL_ID\"}' http://localhost:3000/api/v1/roles.addUserToRole",
+      "join_channel": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"roomId\":\"CHANNEL_ID\"}' http://localhost:3000/api/v1/channels.join",
+      "create_dm": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"username\":\"username\"}' http://localhost:3000/api/v1/im.create",
+      "send_dm": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"channel\":\"@username\",\"text\":\"Message\"}' http://localhost:3000/api/v1/chat.postMessage",
+      "get_dm_messages": "curl -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' 'http://localhost:3000/api/v1/im.messages?roomId=ROOMID'",
+      "send_channel_message": "curl -X POST -H 'Content-Type: application/json' -H 'X-Auth-Token: TOKEN' -H 'X-User-Id: USERID' -d '{\"channel\":\"channel-name\",\"text\":\"Message :emoji: @here\"}' http://localhost:3000/api/v1/chat.postMessage"
+    },
+    "error_handling": {
+      "username_already_exists": "Get existing user ID and continue",
+      "user_already_in_room": "Continue to next step",
+      "user_already_has_role": "Task is complete, you succeeded!",
+      "user_not_found": "You MUST create the user first"
+    },
+    "parsing": {
+      "extract_user_id": "python3 -c \"import sys,json; print(json.load(sys.stdin)['user']['_id'])\"",
+      "extract_channel_id": "python3 -c \"import sys,json; print(json.load(sys.stdin)['channel']['_id'])\"",
+      "extract_auth_token": "python3 -c \"import sys,json; print(json.load(sys.stdin)['data']['authToken'])\"",
+      "extract_user_id_from_login": "python3 -c \"import sys,json; print(json.load(sys.stdin)['data']['userId'])\"",
+      "check_user_exists": "if echo \"$RESPONSE\" | grep -q '\"success\":false'; then # user doesn't exist"
+    }
+  },
+  "plane": {
+    "description": "Project management and issue tracking",
+    "authentication": "x-api-key header",
+    "examples": {
+      "get_projects": "curl -H 'x-api-key: KEY' 'http://localhost:8091/api/v1/workspaces/tac/projects/'",
+      "get_project_id": "curl -H 'x-api-key: KEY' 'http://localhost:8091/api/v1/workspaces/tac/projects/' | python3 -c \"import json; print([p['id'] for p in json.loads(input())['results'] if p['name']=='PROJECT_NAME'][0])\"",
+      "get_cycles": "curl -H 'x-api-key: KEY' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/cycles/'",
+      "get_cycle_issues": "curl -H 'x-api-key: KEY' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/cycles/CYCLE_ID/cycle-issues/'",
+      "get_all_issues": "curl -H 'x-api-key: KEY' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/issues/'",
+      "get_states": "curl -H 'x-api-key: KEY' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/states/'",
+      "update_issue_state": "curl -X PATCH -H 'Content-Type: application/json' -H 'x-api-key: KEY' -d '{\"state\":\"STATE_ID\"}' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/issues/ISSUE_ID/'",
+      "update_issue_cycle": "curl -X PATCH -H 'Content-Type: application/json' -H 'x-api-key: KEY' -d '{\"cycle\":\"CYCLE_ID\"}' 'http://localhost:8091/api/v1/workspaces/tac/projects/PROJECT_ID/issues/ISSUE_ID/'"
+    },
+    "notes": [
+      "Visit Plane URLs for trajectory tracking: http://localhost:8091/tac/projects/PROJECT_ID/issues"
+    ]
+  }
+}
+
